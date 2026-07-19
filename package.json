@@ -1,0 +1,14 @@
+{
+  "name": "tbc-lagplanlegger",
+  "version": "0.6.1",
+  "description": "TBC Arena lagplanlegger – brainstorm hvem som spiller hva, med regler, roller og lagrede teams",
+  "private": true,
+  "scripts": {
+    "test": "node tests/verify.js",
+    "smoke": "node tests/smoke.js",
+    "serve": "npx --yes serve ."
+  },
+  "devDependencies": {
+    "playwright": "^1.45.0"
+  }
+}
