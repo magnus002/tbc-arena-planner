@@ -2,6 +2,12 @@
 
 ## 1. Oversikt over tilgjengelige classes og specs (viktigst)
 
+> **Status juli 2026:** levert som «Tilgjengelig per class»-panelet i
+> Lagbygging-fanen (klikk på navn = valg på tavla, samme state, benk/70
+> vises), pluss comp-sjekkliste (sham/dispeller/maks-brudd/healers) og
+> random-plasser for når gutta ikke er nok folk. Spec-visning per char
+> (`Enh ⚔` osv.) venter på punkt 2.
+
 Et eget panel («Tilgjengelig» e.l.) som viser poolen så man kan bygge lag selv:
 per class en rad med hvem som kan spille den, med 70-status og rolle/spec —
 f.eks. `Sham: Magnus (Enh ⚔, 70) · Andre (Resto ✚, 70)`. Krav:
@@ -27,6 +33,13 @@ Erstatt `roles{cls: healer|dps|both}` med spec-registrering per char:
 - Oracle-testen i `tests/verify.js` må utvides tilsvarende (spec-grening).
 
 ## 3. UI/UX-remake (jobbes iterativt med Magnus)
+
+> **Status juli 2026:** iterasjon 1 landet — faner (Lagbygging/Roster),
+> kollapsbare seksjoner med tellere, flervalg på tavla (`sel[]`, personen
+> alltid med på en av de valgte), FILTRE/REGLER-skille, paginert
+> forslagsliste (25 om gangen), sticky lagre-bar med toasts, roster-fane
+> med store klikkmål. «Hvorfor så få»-forklaringen (kulepunkt 1 under) er
+> nedprioritert av Magnus inntil videre.
 
 Kjente problemer å løse:
 

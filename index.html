@@ -7,68 +7,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>TBC Arena – Lagplanlegger</h1>
-  </header>
-  <p class="sub">Klikk en class for å sette hvem som spiller hva.
-    ✚ = registrert healer, ⚔ = dps, ✚⚔ = kan begge (hybrid). Rolle og 70-status settes per char i «Rediger roster»;
-    tak per class og dispeller-krav under «Gyldige lag». For ✚⚔-chars velger du Healer/DPS på kortet — velger du ingenting, prøver forslagene begge.</p>
-
-  <div class="toolbar">
-    <label>Bracket:
-      <select id="sizeSel">
-        <option value="2">2v2</option>
-        <option value="3">3v3</option>
-        <option value="5" selected>5v5</option>
-      </select>
-    </label>
-    <button id="clearBtn">Nullstill valg</button>
-    <span class="spacer"></span>
-    <button id="editBtn">Rediger roster</button>
-    <button id="resetBtn">Tilbakestill roster</button>
-  </div>
-
-  <h2>Tavla</h2>
-  <div class="cards" id="cards"></div>
-  <div class="addrow" id="addrow" style="display:none">
-    <input type="text" id="newName" placeholder="Nytt navn …">
-    <button id="addBtn">Legg til person</button>
-  </div>
-  <div class="status" id="status"></div>
-  <div class="savebar">
-    <input type="text" id="saveName" placeholder="Navn på laget (valgfritt) …">
-    <button id="saveBtn">Lagre laget på tavla</button>
-    <span id="savehint" style="display:none;color:var(--dim);font-size:12px;align-self:center">– krever fullt lag uten regelbrudd</span>
-  </div>
-
-  <h2>Gyldige lag</h2>
-  <div class="filterrow" id="filterrow"></div>
-  <div class="filterrow" id="healerrow"></div>
-  <div class="filterrow" id="rulesrow"></div>
-  <div class="compcount" id="lockline" style="color:var(--gold)"></div>
-  <div class="compcount" id="compcount"></div>
-  <div id="complist"></div>
-
-  <h2>Lagrede lag</h2>
-  <div id="savedlist"></div>
-  <div class="iopanel">
-    <button id="ioBtn">Eksporter / importer</button>
-    <div id="iobox" style="display:none">
-      <textarea id="ioText" spellcheck="false"></textarea>
-      <div style="margin-top:6px; display:flex; gap:8px; align-items:center">
-        <button id="importBtn">Importer fra teksten</button>
-        <span class="iomsg" id="iomsg"></span>
-      </div>
-    </div>
-  </div>
-
-  <footer>
-    Endringer lagres ikke når siden lukkes – bruk «Eksporter / importer» for å ta vare på lagrede lag,
-    eller be Claude bake roster-endringer og faste lag inn i siden.
-  </footer>
-</div>
-
+<div class="wrap" id="app"></div>
 <script src="engine.js"></script>
 <script src="app.js"></script>
 </body>

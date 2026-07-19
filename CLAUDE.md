@@ -17,26 +17,36 @@ hvem spiller hvilken class/rolle, med regler og lagrede teams. Norsk UI.
   og generatoren `findComps`. Lastes av nettleseren OG require-es av testene.
   ALDRI kopier logikk fra engine inn i app eller tester.
 - `app.js`: UI-tilstand (`state`), rendering (innerHTML-re-render av alt per
-  interaksjon — bevisst enkelt), hendelses-delegering via `data-act`.
+  interaksjon — bevisst enkelt; tekstfelt-verdier bevares i `render()`),
+  hendelses-delegering via `data-act`. To faner: Lagbygging og Roster;
+  seksjonene er kollapsbare og har id `#sec-<navn>`.
 - `tests/verify.js`: uavhengig brute-force-oracle. Poenget er at oracle og
   motor er to separate implementasjoner — en ny regel legges til BEGGE steder.
 - `tests/smoke.js`: playwright-klikktest av hovedflytene mot `file://`.
 
 ## Domenemodell (dagens)
 
-- Person: `{ name, classes[], benched, assigned, healerRole, not70[], roles{} }`
+- Person: `{ name, classes[], benched, sel[], healerRole, not70[], roles{} }`
 - `roles[cls]`: `'healer' | 'dps' | 'both'` for hybrid-classes (pala/priest/
   sham/druid); andre er alltid dps. `'both'` er default. Visning: ✚ / ⚔ / ✚⚔.
-- `healerRole` (true/false/null=åpen) er rollevalget PÅ TAVLA for en låst
-  ✚⚔-char. null → generatoren prøver begge.
+- `sel[]`: valgte classes på tavla. 1+ valgt = HARD føring: personen er
+  alltid med, på EN av de valgte (flervalg → generatoren prøver alle).
+  `healerRole` (true/false/null=åpen) er rollevalget på tavla for ✚⚔-chars;
+  det utelukker classes som ikke kan spille rollen (`selOptions` i engine —
+  brukes også av UI-et, aldri reimplementer den i app).
 - `not70[cls]`: chars som ikke er 70; filtreres bort når «Kun 70» er på.
 - Regler: `caps` (maks per class, manglende nøkkel = ∞; standard rogue×1,
   sham×1), `needDispel` (minst 1 pala/priest), `mustHave`, `healerFilter`
   (eksakt antall faktiske healers).
-- Låst (assigned) person er en HARD føring: alltid med, på den classen.
-  Gull-linja (`#lockline`) viser alt som snevrer inn forslagene.
-- Lagrede lag: `{ name, size, team: [{name, cls, heal(true|false|null)}] }` —
-  heal null = åpen rolle. Eksport/import = JSON i textarea.
+- Random-plasser: `state.randomCount` ukjente spillere teller mot
+  lagstørrelsen (UI-konsept, ikke motor): generatoren kalles med
+  `teamSize − randomCount`; filtre/regler gjelder de kjente.
+- Gull-linja (`.lockline`) viser alt som snevrer inn forslagene;
+  comp-sjekklista (`#checklist`) viser sham/dispeller (ja/mulig/nei),
+  maks-brudd og healer-antall for tavla.
+- Lagrede lag: `{ name, size, team: [{name, cls, heal(true|false|null)}
+  | {random: true}] }` — heal null = åpen rolle. Eksport/import = JSON i
+  textarea; import godtar også gammelt format (uten random).
 
 ## Kjente fallgruver
 

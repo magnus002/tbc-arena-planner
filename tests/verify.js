@@ -17,16 +17,20 @@ function brute(people, opts) {
   let count = 0;
 
   function personOptions(p) {
+    const locked = !!(p.sel && p.sel.length); // valgt på tavla = må med
     const out = [];
-    if (!p.assigned) out.push(null); // kan stå over — låste personer kan ikke
-    const clsList = p.assigned ? [p.assigned] : p.classes;
+    if (!locked) out.push(null); // kan stå over — valgte personer kan ikke
+    const clsList = locked ? p.sel : p.classes;
     for (const cls of clsList) {
       const reg = regOf(p, cls);
+      // rollevalget på tavla utelukker classes som ikke kan spille rollen
+      if (locked && p.healerRole === true && reg === 'dps') continue;
+      if (locked && p.healerRole === false && reg === 'healer') continue;
       let roles;
       if (reg === 'healer') roles = [true];
       else if (reg === 'dps') roles = [false];
-      else if (p.assigned && p.healerRole === true) roles = [true];
-      else if (p.assigned && p.healerRole === false) roles = [false];
+      else if (locked && p.healerRole === true) roles = [true];
+      else if (locked && p.healerRole === false) roles = [false];
       else roles = roleMode ? [true, false] : [false];
       for (const heal of roles) out.push({ name: p.name, cls, heal });
     }
@@ -66,7 +70,7 @@ function brute(people, opts) {
 function roster(overrides = {}) {
   return DEFAULT_ROSTER.map(p => ({
     ...p, classes: [...p.classes],
-    benched: false, assigned: null, healerRole: null, not70: [], roles: {},
+    benched: false, sel: [], healerRole: null, not70: [], roles: {},
     ...(overrides[p.name] || {}),
   }));
 }
@@ -122,12 +126,20 @@ scenario('5v5, kun tak (uten dispel-krav)', roster(), { ...base, needDispel: fal
 scenario('5v5, pala begrenset til ×2', roster(), { ...base, caps: { rogue: 1, sham: 1, pala: 2 } });
 scenario('5v5, pala ×1', roster(), { ...base, caps: { rogue: 1, sham: 1, pala: 1 } }, 65);
 
-// Kombinasjoner: lås, rolleregistrering, benk, 70-status, must-have, brackets
-scenario('5v5, Magnus låst sham som healer + eksakt 2 healers', roster({ Magnus: { assigned: 'sham', healerRole: true } }), { ...base, healerWanted: 2 });
+// Kombinasjoner: valg på tavla, rolleregistrering, benk, 70-status, must-have, brackets
+scenario('5v5, Magnus valgt sham som healer + eksakt 2 healers', roster({ Magnus: { sel: ['sham'], healerRole: true } }), { ...base, healerWanted: 2 });
 scenario('5v5, Brynjar-druid=✚, Andre-sham=⚔ + eksakt 2 healers', roster({ Brynjar: { roles: { druid: 'healer' } }, Andre: { roles: { sham: 'dps' } } }), { ...base, healerWanted: 2 });
 scenario('5v5, Tobias benket + Runar-hunter ikke 70 + må ha warr', roster({ Tobias: { benched: true }, Runar: { not70: ['hunter'] } }), { ...base, mustHave: new Set(['warr']) });
 scenario('3v3, standardregler + eksakt 1 healer', roster(), { ...base, teamSize: 3, healerWanted: 1 });
 scenario('2v2, standardregler uten dispel-krav', roster(), { ...base, teamSize: 2, needDispel: false });
+
+// Flervalg på tavla: personen er alltid med, på en av de valgte classene
+scenario('5v5, Magnus valgt sham ELLER priest', roster({ Magnus: { sel: ['sham', 'priest'] } }), base, 76);
+scenario('5v5, Magnus sham/priest som healer + eksakt 2 healers', roster({ Magnus: { sel: ['sham', 'priest'], healerRole: true } }), { ...base, healerWanted: 2 }, 179);
+scenario('5v5, Magnus sham/mage som healer (mage utelukkes) + 2 healers', roster({ Magnus: { sel: ['sham', 'mage'], healerRole: true } }), { ...base, healerWanted: 2 });
+scenario('5v5, rollevalg utelukker alle valgte classes → 0', roster({ Magnus: { sel: ['mage'], healerRole: true } }), base, 0);
+scenario('5v5, to med flervalg (Magnus warr/sham, Andre rogue/mage)', roster({ Magnus: { sel: ['warr', 'sham'] }, Andre: { sel: ['rogue', 'mage'] } }), base);
+scenario('3v3, Magnus sham/priest + eksakt 1 healer', roster({ Magnus: { sel: ['sham', 'priest'] } }), { ...base, teamSize: 3, healerWanted: 1 });
 
 // Scenarioet fra skjermbilde-diskusjonen (rene ✚-registreringer + må ha sham) = 3
 scenario('5v5, «hvorfor bare 3?»-scenarioet', roster({

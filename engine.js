@@ -56,10 +56,19 @@ function regOf(p, cls) {
   return (p.roles && p.roles[cls]) || 'both';
 }
 
+// Hvilke av personens valgte classes (sel[]) rollevalget på tavla tillater:
+// «Healer» utelukker rene ⚔-registreringer, «DPS» utelukker rene ✚-registreringer.
+function selOptions(p) {
+  let opts = p.sel || [];
+  if (p.healerRole === true) opts = opts.filter(c => regOf(p, c) !== 'dps');
+  if (p.healerRole === false) opts = opts.filter(c => regOf(p, c) !== 'healer');
+  return opts;
+}
+
 /*
  * findComps(people, opts) → { results, capped }
  *
- * people: [{ name, classes[], benched, assigned, healerRole(true|false|null), not70[], roles{} }]
+ * people: [{ name, classes[], benched, sel[], healerRole(true|false|null), not70[], roles{} }]
  * opts:   { teamSize, mustHave(Set), healerWanted(null|int), only70(bool),
  *           caps({cls: maks} — class uten oppføring = ubegrenset), needDispel(bool) }
  *
@@ -68,8 +77,10 @@ function regOf(p, cls) {
  * 'healer'-chars teller alltid som healer, 'dps'-chars aldri, '✚⚔'-chars
  * grenes i begge roller — med mindre rollen er valgt på tavla (healerRole).
  * Uten filter genereres hvert class-oppsett én gang; heal-flagget settes da
- * kun for 'healer'-registrerte (visning). Låste (assigned) personer er harde
- * føringer: de er alltid med, på den classen.
+ * kun for 'healer'-registrerte (visning). Valgte personer (sel[] ikke tom)
+ * er harde føringer: de er alltid med, på en av de valgte classene —
+ * rollevalget kan snevre inn hvilke (selOptions). Utelukker rollevalget
+ * alle valgte classes, finnes ingen gyldige lag.
  */
 function findComps(people, opts) {
   const { teamSize, mustHave, healerWanted, only70, caps, needDispel } = opts;
@@ -105,15 +116,19 @@ function findComps(people, opts) {
       return;
     }
     const p = candidates[i];
-    if (p.assigned) {
-      if ((counts[p.assigned] || 0) >= capOf(p.assigned) || team.length >= teamSize) return;
-      if (only70 && !is70(p, p.assigned)) return;
-      for (const heal of roleOptions(p, p.assigned, true)) {
-        team.push({ name: p.name, cls: p.assigned, heal });
-        counts[p.assigned] = (counts[p.assigned] || 0) + 1;
-        rec(i + 1, team, healCount + (heal ? 1 : 0));
-        team.pop();
-        counts[p.assigned]--;
+    if (p.sel && p.sel.length) {
+      // valgt person: alltid med, på en av de valgte classene — ingen «stå over»-gren
+      if (team.length >= teamSize) return;
+      for (const c of selOptions(p)) {
+        if ((counts[c] || 0) >= capOf(c)) continue;
+        if (only70 && !is70(p, c)) continue;
+        for (const heal of roleOptions(p, c, true)) {
+          team.push({ name: p.name, cls: c, heal });
+          counts[c] = (counts[c] || 0) + 1;
+          rec(i + 1, team, healCount + (heal ? 1 : 0));
+          team.pop();
+          counts[c]--;
+        }
       }
     } else {
       if (team.length < teamSize) {
@@ -139,5 +154,5 @@ function findComps(people, opts) {
 
 // Node-eksport for testene; ignoreres i nettleseren.
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { CLASSES, CLASS_KEYS, MAX_RESULTS, DISPEL, SPECS, DEFAULT_ROSTER, is70, regOf, findComps };
+  module.exports = { CLASSES, CLASS_KEYS, MAX_RESULTS, DISPEL, SPECS, DEFAULT_ROSTER, is70, regOf, selOptions, findComps };
 }
