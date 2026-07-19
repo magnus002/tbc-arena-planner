@@ -57,6 +57,11 @@ Kjente problemer å løse:
 
 ## 4. Ekte lagring (localStorage) — mulig først ved egen hosting
 
+> **Status juli 2026:** levert — hele `state` (roster, regler, tavla,
+> lagrede lag, random-plasser) persisteres automatisk, versjonert
+> (`{v: 1, ...}`) med validering og migreringskrok i `loadStored()`.
+> Eksport/import beholdt som deling.
+
 Artifact-versjonen kunne ikke bruke localStorage; det kan repo-versjonen:
 
 - Persistér hele `state` (roster-endringer, regler, lagrede lag) automatisk.
@@ -64,6 +69,11 @@ Artifact-versjonen kunne ikke bruke localStorage; det kan repo-versjonen:
 - Versjonér lagringsformatet (`{v: 2, ...}`) med migrering.
 
 ## 5. Hosting og deling
+
+> **Status juli 2026:** Magnus har aktivert Pages — live på
+> https://magnus002.github.io/tbc-arena-planner/ (deploy fra `main`;
+> merge dit er live etter ~ett minutt). Kombinert med punkt 4 husker
+> siden alt lokalt per person.
 
 - GitHub Pages fra main-branch (statisk side — funker som den er).
 - Da får gutta én URL; kombinert med punkt 4 husker den alt lokalt per person.

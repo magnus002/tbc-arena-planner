@@ -9,6 +9,11 @@
  * Random-plasser: state.randomCount ukjente spillere teller mot lagstørrelsen.
  * Generatoren jobber da med teamSize − randomCount kjente plasser; filtre og
  * regler gjelder de kjente. Lagres/eksporteres som { random: true }-oppføringer.
+ *
+ * Lagring (PLAN punkt 4): hele state persisteres til localStorage i render()
+ * (persist), og gjenopprettes ved oppstart (loadStored) med validering og
+ * versjonsfelt. Feiler lagringen (privat modus, sandbox uten localStorage)
+ * kjører alt videre i minnet — derfor svelges feilene med vilje.
  */
 
 let state = {
@@ -39,6 +44,109 @@ function freshRoster() {
     not70: [],
     roles: {},         // per-char registrering for hybrid-classes: 'healer' | 'dps' | 'both'
   }));
+}
+
+/* ---------- lagring ---------- */
+
+const STORAGE_KEY = 'tbc-arena-planner';
+const STORAGE_VERSION = 1;
+
+// Rens en liste lagrede lag (fra import ELLER localStorage) til gyldig form.
+// Godtar gammelt format uten random-oppføringer. null = ikke en liste.
+function reviveSaved(data) {
+  if (!Array.isArray(data)) return null;
+  const clean = [];
+  for (const s of data) {
+    if (!s || !Array.isArray(s.team)) continue;
+    const team = s.team
+      .filter(x => x && (x.random === true || (typeof x.name === 'string' && CLASSES[x.cls])))
+      .map(x => x.random === true
+        ? { random: true }
+        : { name: x.name, cls: x.cls, heal: x.heal === true ? true : x.heal === false ? false : null });
+    if (!team.length) continue;
+    clean.push({
+      name: typeof s.name === 'string' && s.name.trim() ? s.name.trim() : 'Importert lag',
+      size: [2, 3, 5].includes(s.size) ? s.size : ([2, 3, 5].includes(team.length) ? team.length : 5),
+      team,
+    });
+  }
+  return clean;
+}
+
+function revivePeople(list) {
+  if (!Array.isArray(list)) return null;
+  const out = [];
+  const seen = new Set();
+  for (const p of list) {
+    if (!p || typeof p.name !== 'string' || !p.name.trim()) continue;
+    if (seen.has(p.name.toLowerCase())) continue;
+    seen.add(p.name.toLowerCase());
+    const classes = (Array.isArray(p.classes) ? p.classes : []).filter(c => CLASSES[c]);
+    const roles = {};
+    if (p.roles && typeof p.roles === 'object') {
+      for (const k of Object.keys(p.roles)) {
+        if (CLASSES[k] && ['healer', 'dps', 'both'].includes(p.roles[k])) roles[k] = p.roles[k];
+      }
+    }
+    out.push({
+      name: p.name,
+      classes,
+      benched: p.benched === true,
+      sel: (Array.isArray(p.sel) ? p.sel : []).filter(c => classes.includes(c)),
+      healerRole: p.healerRole === true ? true : p.healerRole === false ? false : null,
+      not70: (Array.isArray(p.not70) ? p.not70 : []).filter(c => CLASSES[c]),
+      roles,
+    });
+  }
+  return out.length ? out : null;
+}
+
+function loadStored() {
+  let d;
+  try {
+    d = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  } catch (e) {
+    return;
+  }
+  if (!d || d.v !== STORAGE_VERSION) return; // ukjent format → start ferskt (migrering hektes på her)
+  if ([2, 3, 5].includes(d.teamSize)) state.teamSize = d.teamSize;
+  if (d.tab === 'roster' || d.tab === 'build') state.tab = d.tab;
+  if (d.collapsed && typeof d.collapsed === 'object') state.collapsed = { ...d.collapsed };
+  if (Array.isArray(d.mustHave)) state.mustHave = new Set(d.mustHave.filter(c => CLASSES[c]));
+  if ([1, 2, 3].includes(d.healerFilter) || d.healerFilter === null) state.healerFilter = d.healerFilter;
+  if (typeof d.only70 === 'boolean') state.only70 = d.only70;
+  if (typeof d.needDispel === 'boolean') state.needDispel = d.needDispel;
+  if (d.caps && typeof d.caps === 'object') {
+    const caps = {};
+    for (const k of Object.keys(d.caps)) {
+      if (CLASSES[k] && Number.isInteger(d.caps[k]) && d.caps[k] >= 0) caps[k] = d.caps[k];
+    }
+    state.caps = caps;
+  }
+  const ppl = revivePeople(d.people);
+  if (ppl) state.people = ppl;
+  const saved = reviveSaved(d.saved);
+  if (saved) state.saved = saved;
+  if (Number.isInteger(d.randomCount)) state.randomCount = Math.max(0, Math.min(d.randomCount, state.teamSize));
+}
+
+function persist() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      v: STORAGE_VERSION,
+      teamSize: state.teamSize,
+      tab: state.tab,
+      collapsed: state.collapsed,
+      mustHave: [...state.mustHave],
+      healerFilter: state.healerFilter,
+      only70: state.only70,
+      caps: state.caps,
+      needDispel: state.needDispel,
+      people: state.people,
+      saved: state.saved,
+      randomCount: state.randomCount,
+    }));
+  } catch (e) { /* privat modus / sandbox uten localStorage: fortsett uten lagring */ }
 }
 
 function esc(s) {
@@ -500,7 +608,7 @@ function render() {
     view = rosterSection() + savedSection();
   }
 
-  const foot = '<footer>Endringer lagres ikke når siden lukkes – bruk «Eksporter / importer» under «Lagrede lag» for å ta vare på dem, eller be Claude bake roster-endringer og faste lag inn i siden.</footer>';
+  const foot = '<footer>Alt lagres automatisk i denne nettleseren. Bruk «Eksporter / importer» under «Lagrede lag» for å dele lag med gutta eller flytte dem til en annen maskin.</footer>';
   const toast = state.toast ? '<div class="toast">' + state.toast + '</div>' : '';
   document.getElementById('app').innerHTML = top + view + foot + savebarHtml() + toast;
 
@@ -515,6 +623,7 @@ function render() {
     const ta = document.getElementById('ioText');
     if (ta && document.activeElement !== ta) ta.value = JSON.stringify(state.saved, null, 1);
   }
+  persist();
 }
 
 let toastTimer = null;
@@ -649,23 +758,8 @@ document.addEventListener('click', e => {
   } else if (act === 'import') {
     const msgEl = document.getElementById('iomsg');
     try {
-      const data = JSON.parse(document.getElementById('ioText').value);
-      if (!Array.isArray(data)) throw new Error('Forventet en liste');
-      const clean = [];
-      for (const s of data) {
-        if (!s || !Array.isArray(s.team)) continue;
-        const team = s.team
-          .filter(x => x && (x.random === true || (typeof x.name === 'string' && CLASSES[x.cls])))
-          .map(x => x.random === true
-            ? { random: true }
-            : { name: x.name, cls: x.cls, heal: x.heal === true ? true : x.heal === false ? false : null });
-        if (!team.length) continue;
-        clean.push({
-          name: typeof s.name === 'string' && s.name.trim() ? s.name.trim() : 'Importert lag',
-          size: [2, 3, 5].includes(s.size) ? s.size : ([2, 3, 5].includes(team.length) ? team.length : 5),
-          team,
-        });
-      }
+      const clean = reviveSaved(JSON.parse(document.getElementById('ioText').value));
+      if (!clean) throw new Error('Forventet en liste');
       state.saved = clean;
       showToast('Importerte ' + clean.length + ' lag (erstattet lista)');
     } catch (err) {
@@ -757,4 +851,5 @@ document.addEventListener('keydown', e => {
   }
 });
 
+loadStored();
 render();

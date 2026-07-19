@@ -73,6 +73,11 @@ const { chromium } = require('playwright');
   t.exportHasTeam = (await page.inputValue('#ioText')).includes('Testlag');
   await click('[data-act="toggleio"]');
 
+  // Lagring (PLAN 4): tavla og lagrede lag overlever reload via localStorage
+  await page.reload();
+  t.persistedSaved = (await text('#sec-saved')).includes('Testlag');
+  t.persistedBoard = (await text('#sec-board .sechead .count')) === '5/5';
+
   // Random-plass: teller mot lagstørrelsen (4 kjente plasser → 242, fasit fra motoren)
   await click('[data-act="clear"]');
   await click('[data-act="healfilter"][data-val="all"]');
