@@ -22,7 +22,9 @@ npm run smoke   # klikktest i browser (tests/smoke.js)
 ```
 
 `npm test` skal alltid være grønn før commit. Se `CLAUDE.md` for arbeidsform
-og arkitektur, `PLAN.md` for prioritert roadmap.
+og arkitektur, `PLAN.md` for prioritert roadmap. `CHROMIUM_PATH` kan settes
+for å kjøre smoke-testen mot en ferdiginstallert chromium i stedet for
+playwright sin egen nedlasting.
 
 ## Publisere (GitHub + Pages)
 
