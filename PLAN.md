@@ -3,7 +3,7 @@
 ## 1. Oversikt over tilgjengelige classes og specs (viktigst)
 
 > **Status juli 2026:** levert som «Tilgjengelig per class»-panelet i
-> Lagbygging-fanen (klikk på navn = valg på tavla, samme state, benk/70
+> Pugging-fanen (klikk på navn = valg på tavla, samme state, benk/70
 > vises), pluss comp-sjekkliste (sham/dispeller/maks-brudd/healers) og
 > random-plasser for når gutta ikke er nok folk. Spec-visning per char
 > (`Enh ⚔` osv.) venter på punkt 2.
@@ -40,6 +40,12 @@ Erstatt `roles{cls: healer|dps|both}` med spec-registrering per char:
 > forslagsliste (25 om gangen), sticky lagre-bar med toasts, roster-fane
 > med store klikkmål. «Hvorfor så få»-forklaringen (kulepunkt 1 under) er
 > nedprioritert av Magnus inntil videre.
+>
+> **Iterasjon 2 (juli 2026):** «Filtre og regler» skilt ut som egen seksjon
+> med aktiv-oppsummering i headeren; gyldige lag kan sorteres (som generert /
+> like comps samlet / flest healers / flest dispellere); ny «Pugging»-fane
+> spesialisert for comp-brainstorm (comp-stripe med ledige plasser,
+> sjekkliste, tilgjengelig-oversikt, random) — Lagbygging-fanen er roligere.
 
 Kjente problemer å løse:
 

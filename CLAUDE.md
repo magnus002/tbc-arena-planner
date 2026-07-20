@@ -19,8 +19,10 @@ hvem spiller hvilken class/rolle, med regler og lagrede teams. Norsk UI.
   ALDRI kopier logikk fra engine inn i app eller tester.
 - `app.js`: UI-tilstand (`state`), rendering (innerHTML-re-render av alt per
   interaksjon — bevisst enkelt; tekstfelt-verdier bevares i `render()`),
-  hendelses-delegering via `data-act`. To faner: Lagbygging og Roster;
-  seksjonene er kollapsbare og har id `#sec-<navn>`.
+  hendelses-delegering via `data-act`. Tre faner: Lagbygging (tavla, filtre/
+  regler, gyldige lag med sortering), Pugging (brainstorm: comp-stripe,
+  sjekkliste, tilgjengelig-oversikt, random-plasser) og Roster — alle deler
+  samme state. Seksjonene er kollapsbare og har id `#sec-<navn>`.
 - `tests/verify.js`: uavhengig brute-force-oracle. Poenget er at oracle og
   motor er to separate implementasjoner — en ny regel legges til BEGGE steder.
 - `tests/smoke.js`: playwright-klikktest av hovedflytene mot `file://`.
