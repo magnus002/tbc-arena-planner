@@ -12,14 +12,17 @@ hvem spiller hvilken class/rolle, med regler og lagrede teams. Norsk UI.
 ## Arkitektur (bevisst enkel)
 
 - **Ingen build-steg, ingen rammeverk.** Statisk side: `index.html` + `style.css`
-  + `engine.js` + `app.js`. Skal kunne hostes rett på GitHub Pages.
+  + `engine.js` + `app.js`. Hostes på GitHub Pages fra `main`:
+  https://magnus002.github.io/tbc-arena-planner/ — merge til main = live.
 - **`engine.js` er delt sannhet**: domenedata (CLASSES, SPECS, DEFAULT_ROSTER)
   og generatoren `findComps`. Lastes av nettleseren OG require-es av testene.
   ALDRI kopier logikk fra engine inn i app eller tester.
 - `app.js`: UI-tilstand (`state`), rendering (innerHTML-re-render av alt per
   interaksjon — bevisst enkelt; tekstfelt-verdier bevares i `render()`),
-  hendelses-delegering via `data-act`. To faner: Lagbygging og Roster;
-  seksjonene er kollapsbare og har id `#sec-<navn>`.
+  hendelses-delegering via `data-act`. Tre faner: Lagbygging (tavla, filtre/
+  regler, gyldige lag med sortering), Pugging (brainstorm: comp-stripe,
+  sjekkliste, tilgjengelig-oversikt, random-plasser) og Roster — alle deler
+  samme state. Seksjonene er kollapsbare og har id `#sec-<navn>`.
 - `tests/verify.js`: uavhengig brute-force-oracle. Poenget er at oracle og
   motor er to separate implementasjoner — en ny regel legges til BEGGE steder.
 - `tests/smoke.js`: playwright-klikktest av hovedflytene mot `file://`.
@@ -50,9 +53,10 @@ hvem spiller hvilken class/rolle, med regler og lagrede teams. Norsk UI.
 
 ## Kjente fallgruver
 
-- Artifact-versjonen (Claude/Cowork) forbyr localStorage — repo-versjonen på
-  egen hosting kan og BØR bruke localStorage (se PLAN.md punkt 4). Ikke
-  gjeninnfør denne begrensningen når siden hostes selv.
+- Lagring: hele `state` persisteres til localStorage, versjonert — ved
+  formatendringer, bump `STORAGE_VERSION` og legg migrering i `loadStored()`.
+  `persist()`/`loadStored()` svelger feil med vilje: artifact-/sandbox-kopier
+  uten localStorage skal kjøre videre i minnet. Ikke fjern lagringen.
 - Rene ✚-registreringer betyr «teller alltid som healer når han er med» —
   kombinert med eksakt-N-filteret blir resultatlista fort veldig smal. UX-en
   bør forklare slike innsnevringer (se PLAN.md punkt 3).

@@ -26,16 +26,14 @@ og arkitektur, `PLAN.md` for prioritert roadmap. `CHROMIUM_PATH` kan settes
 for å kjøre smoke-testen mot en ferdiginstallert chromium i stedet for
 playwright sin egen nedlasting.
 
-## Publisere (GitHub + Pages)
+## Live-versjon
 
-```bash
-gh repo create tbc-lagplanlegger --private --source . --push
-```
+Verktøyet er live på **https://magnus002.github.io/tbc-arena-planner/**
+(GitHub Pages, deploy fra `main` / root). Merge/push til `main` er live
+etter ~ett minutt — hard refresh (Ctrl+F5) om du ser en gammel versjon.
 
-Deretter i repo-innstillingene på GitHub: Settings → Pages → Deploy from
-branch → `main` / root. Siden blir liggende på
-`https://<brukernavn>.github.io/tbc-lagplanlegger/` — og på egen hosting kan
-verktøyet ta i bruk localStorage for ekte lagring (se PLAN.md punkt 4).
+Siden bruker localStorage: roster, regler, tavla og lagrede lag huskes
+per nettleser. «Eksporter / importer» brukes for å dele lag gutta imellom.
 
 ## Struktur
 

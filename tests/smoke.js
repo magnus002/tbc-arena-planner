@@ -38,16 +38,27 @@ const { chromium } = require('playwright');
   t.noDispelOk = (await compCount()) === '185';
   await page.locator('[data-act="dispel"]').check();
 
+  // «Filtre og regler» er egen seksjon; lista kan sorteres
+  t.filtersSeparate = (await page.locator('#sec-filters [data-act="cap"]').count()) === 8;
+  await click('[data-act="sortby"][data-val="heal"]');
+  const heals = await page.locator('#sec-comps .healbadge').allTextContents();
+  t.sortHealDesc = heals.length > 1 && parseInt(heals[0].slice(1)) >= parseInt(heals[heals.length - 1].slice(1));
+  await click('[data-act="sortby"][data-val="std"]');
+
   // Lagre direkte fra forslagsrad → toast + teller i «Lagrede lag»
   await click('[data-act="savecomp"]');
   t.saveToast = (await text('.toast')).includes('Lagret som');
   t.savedFromRow = (await text('#sec-saved .sechead .count')) === '1';
 
-  // Byggeklosser: velg Magnus-sham fra «Tilgjengelig per class»-panelet
+  // Byggeklosser i Pugging-fanen: velg Magnus-sham fra «Tilgjengelig per class»
+  await click('[data-act="tab"][data-val="pug"]');
   await click('#sec-avail [data-act="selchip"][data-pi="0"][data-cls="sham"]');
+  t.pugStrip = (await text('#sec-pug .pairs')).includes('Magnus');
+  t.pugSlots = (await text('#sec-pug .pairs')).includes('ledig');
+  t.checkShamYes = (await text('#checklist')).includes('Sham ✓');
+  await click('[data-act="tab"][data-val="build"]');
   t.availSelects = (await page.locator('#sec-board [data-act="selchip"][data-pi="0"][data-cls="sham"]').getAttribute('aria-pressed')) === 'true';
   t.lockline = (await text('#sec-comps .lockline')).includes('Magnus');
-  t.checkShamYes = (await text('#checklist')).includes('Sham ✓');
 
   // Rolle healer + eksakt 2 healers → 64 (fasit i verify.js)
   await click('[data-act="pickrole"][data-val="heal"]');
@@ -73,10 +84,20 @@ const { chromium } = require('playwright');
   t.exportHasTeam = (await page.inputValue('#ioText')).includes('Testlag');
   await click('[data-act="toggleio"]');
 
-  // Random-plass: teller mot lagstørrelsen (4 kjente plasser → 242, fasit fra motoren)
+  // Lagring (PLAN 4): tavla og lagrede lag overlever reload via localStorage
+  await page.reload();
+  t.persistedSaved = (await text('#sec-saved')).includes('Testlag');
+  t.persistedBoard = (await text('#sec-board .sechead .count')) === '5/5';
+
+  // Random-plass legges til i Pugging og teller mot lagstørrelsen
+  // (4 kjente plasser → 242, fasit fra motoren)
   await click('[data-act="clear"]');
   await click('[data-act="healfilter"][data-val="all"]');
+  await click('[data-act="tab"][data-val="pug"]');
   await click('[data-act="addrandom"]');
+  t.pugRandomStrip = (await text('#sec-pug .pairs')).includes('Random');
+  t.pugValidline = (await text('#sec-pug')).includes('242 gyldige lag');
+  await click('[data-act="tab"][data-val="build"]');
   t.randomBoardBadge = (await text('#sec-board .sechead .count')) === '1/5';
   t.randomCountOk = (await compCount()) === '242';
   t.randomInRow = (await text('#sec-comps .comp')).includes('Random');
