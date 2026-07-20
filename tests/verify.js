@@ -6,7 +6,7 @@
  * Prinsipp: hver ny regel i motoren MÅ også legges til i brute() her —
  * de to implementasjonene skal være uavhengige av hverandre.
  */
-const { CLASSES, DISPEL, DEFAULT_ROSTER, is70, regOf, findComps } = require('../engine.js');
+const { CLASSES, DISPEL, SPECS, META, DEFAULT_ROSTER, is70, regOf, findComps } = require('../engine.js');
 
 /* ---- Uavhengig oracle ---- */
 function brute(people, opts) {
@@ -149,5 +149,52 @@ scenario('5v5, «hvorfor bare 3?»-scenarioet', roster({
   Andre:   { roles: { sham: 'healer' } },
   Tobias:  { not70: ['pala'] },
 }), { ...base, mustHave: new Set(['sham']), healerWanted: 2 }, 3);
+
+/* ---- Integritetssjekk av META (research-dataene i «Comps»-fanen) ----
+ * Ikke oracle-mot-motor, men validering av at dataene er konsistente med
+ * domenemodellen: gyldige class-/spec-nøkler og healer-tall som stemmer
+ * med spec-rollene. */
+function metaCheck() {
+  const errs = [];
+  const clsOk = c => CLASSES[c] || META.extraClasses[c];
+  const specRole = (c, key) => {
+    const cat = SPECS[c] || (c === 'lock'
+      ? [{ key: 'affli', role: 'dps' }, { key: 'demo', role: 'dps' }, { key: 'destro', role: 'dps' }]
+      : []);
+    const s = cat.find(x => x.key === key);
+    return s ? s.role : null;
+  };
+  for (const size of Object.keys(META.comps)) {
+    for (const comp of META.comps[size]) {
+      const id = size + 'v' + size + ' «' + comp.name + '»';
+      if (comp.classes.length !== Number(size)) errs.push(id + ': feil antall classes');
+      if (comp.specs.length !== comp.classes.length) errs.push(id + ': specs matcher ikke classes');
+      if (!['S', 'A', 'B'].includes(comp.tier)) errs.push(id + ': ukjent tier');
+      let heal = 0;
+      comp.classes.forEach((c, i) => {
+        if (!clsOk(c)) { errs.push(id + ': ukjent class ' + c); return; }
+        const role = specRole(c, comp.specs[i]);
+        if (role === null) errs.push(id + ': ukjent spec ' + comp.specs[i] + ' for ' + c);
+        if (role === 'healer') heal++;
+      });
+      if (heal !== comp.healers) errs.push(id + ': healers=' + comp.healers + ' men spec-rollene gir ' + heal);
+    }
+  }
+  for (const r of META.rules) {
+    if (!['hard', 'myk'].includes(r.type)) errs.push('føring «' + r.rule + '»: ukjent type');
+    if (!['5v5', '3v3', '2v2', 'alle'].includes(r.scope)) errs.push('føring «' + r.rule + '»: ukjent scope');
+    if (!['healerFilter', 'caps', 'mustHave', 'needDispel', 'nytt-konsept'].includes(r.hint)) errs.push('føring «' + r.rule + '»: ukjent hint');
+  }
+  for (const c of Object.keys(META.dispel.defensive)) if (!clsOk(c)) errs.push('dispel.defensive: ukjent class ' + c);
+  for (const c of META.dispel.offensive) if (!clsOk(c)) errs.push('dispel.offensive: ukjent class ' + c);
+  for (const c of META.ms.classes) if (!clsOk(c)) errs.push('ms.classes: ukjent class ' + c);
+  for (const s of META.sources) if (!/^https:\/\//.test(s.url)) errs.push('kilde uten https-URL: ' + s.title);
+
+  const n = Object.values(META.comps).reduce((a, l) => a + l.length, 0);
+  if (errs.length) fail++;
+  console.log((errs.length ? 'FEIL' : 'OK  ') + '  META-integritet: ' + n + ' comps, ' + META.rules.length + ' føringer' +
+    (errs.length ? ' [' + errs.join('; ') + ']' : ''));
+}
+metaCheck();
 
 process.exit(fail ? 1 : 0);

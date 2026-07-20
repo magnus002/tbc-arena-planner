@@ -30,9 +30,11 @@ let state = {
   saved: [],          // [{name, size, team: [{name, cls, heal} | {random:true}]}]
   randomCount: 0,     // antall random-plasser på tavla
   shown: 25,          // paginering av forslagslista
+  metaOnlyOss: false, // Comps-fanen: vis kun comps gutta kan bemanne
   showIO: false,
   toast: null,
 };
+state.collapsed.kilder = true; // kilde-lista i Comps-fanen starter lukket
 const PAGE = 25;
 
 function freshRoster() {
@@ -111,8 +113,9 @@ function loadStored() {
   }
   if (!d || d.v !== STORAGE_VERSION) return; // ukjent format → start ferskt (migrering hektes på her)
   if ([2, 3, 5].includes(d.teamSize)) state.teamSize = d.teamSize;
-  if (['build', 'pug', 'roster'].includes(d.tab)) state.tab = d.tab;
+  if (['build', 'pug', 'meta', 'roster'].includes(d.tab)) state.tab = d.tab;
   if (['std', 'comp', 'heal', 'disp'].includes(d.sortBy)) state.sortBy = d.sortBy;
+  if (typeof d.metaOnlyOss === 'boolean') state.metaOnlyOss = d.metaOnlyOss;
   if (d.collapsed && typeof d.collapsed === 'object') state.collapsed = { ...d.collapsed };
   if (Array.isArray(d.mustHave)) state.mustHave = new Set(d.mustHave.filter(c => CLASSES[c]));
   if ([1, 2, 3].includes(d.healerFilter) || d.healerFilter === null) state.healerFilter = d.healerFilter;
@@ -148,6 +151,7 @@ function persist() {
       people: state.people,
       saved: state.saved,
       randomCount: state.randomCount,
+      metaOnlyOss: state.metaOnlyOss,
     }));
   } catch (e) { /* privat modus / sandbox uten localStorage: fortsett uten lagring */ }
 }
@@ -573,6 +577,135 @@ function pugSection() {
   return section('pug', 'Compen', badge, clearBtn, strip + checklistHtml(info) + validline);
 }
 
+/* ---------- fane: comps (research-referanse fra META i engine.js) ---------- */
+
+function clsInfo(c) {
+  return CLASSES[c] || META.extraClasses[c] || { label: c, color: 'var(--dim)', healer: false };
+}
+
+function metaSpecRole(cls, key) {
+  const s = (SPECS[cls] || []).find(x => x.key === key);
+  return s ? s.role : 'dps';
+}
+
+/*
+ * Kan gutta bemanne compen? Classes utenfor CLASSES (lock) løses som
+ * random-plasser, og inntil 2 plasser totalt kan stå udekket (PUG).
+ * Returnerer { team, randoms } eller null. Bruker motoren med eksakte
+ * class-tak og filtrerer på signatur — respekterer benk og «Kun 70».
+ */
+function findStaffing(comp) {
+  const known = comp.classes.filter(c => CLASSES[c]);
+  const lockN = comp.classes.length - known.length;
+  const tryExact = clsList => {
+    const caps = {};
+    CLASS_KEYS.forEach(c => { caps[c] = 0; });
+    clsList.forEach(c => { caps[c]++; });
+    const sig = clsList.slice().sort().join('|');
+    const { results } = findComps(state.people.map(p => ({ ...p, sel: [] })), {
+      teamSize: clsList.length, mustHave: new Set(), healerWanted: null,
+      only70: state.only70, caps, needDispel: false,
+    });
+    return results.find(t => t.map(x => x.cls).sort().join('|') === sig) || null;
+  };
+  const maxDrop = Math.max(0, 2 - lockN);
+  for (let drop = 0; drop <= maxDrop; drop++) {
+    if (lockN + drop >= comp.classes.length) break; // minst én av gutta må være med
+    if (drop === 0) {
+      const team = tryExact(known);
+      if (team) return { team, randoms: lockN };
+    } else if (drop === 1) {
+      for (let i = 0; i < known.length; i++) {
+        const team = tryExact(known.filter((_, x) => x !== i));
+        if (team) return { team, randoms: lockN + 1 };
+      }
+    } else {
+      for (let i = 0; i < known.length; i++) {
+        for (let j = i + 1; j < known.length; j++) {
+          const team = tryExact(known.filter((_, x) => x !== i && x !== j));
+          if (team) return { team, randoms: lockN + 2 };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function metaView() {
+  const comps = META.comps[state.teamSize] || [];
+  const tierRank = { S: 0, A: 1, B: 2 };
+  const rows = [];
+  let shown = 0;
+  comps.map((comp, mi) => ({ comp, mi, st: findStaffing(comp) }))
+    .sort((a, b) => tierRank[a.comp.tier] - tierRank[b.comp.tier])
+    .forEach(({ comp, mi, st }) => {
+      if (state.metaOnlyOss && !st) return;
+      shown++;
+      const chips = comp.classes.map((c, i) => {
+        const info = clsInfo(c);
+        const role = metaSpecRole(c, comp.specs[i]);
+        const style = role === 'healer'
+          ? 'background:' + info.color + ';border-color:' + info.color + ';color:var(--ink)'
+          : 'border-color:' + info.color + ';color:' + info.color;
+        return '<span class="pair" style="' + style + '">' + info.label + '</span>';
+      }).join('');
+      const feas = st
+        ? (st.randoms
+          ? '<span class="ckpill maybe">✓ m/ ' + st.randoms + ' random</span>'
+          : '<span class="ckpill ok">✓ gutta kan</span>')
+        : '<span class="ckpill">mangler folk</span>';
+      rows.push('<div class="comp"><span class="pairs">' +
+        '<span class="tier ' + comp.tier + '">' + comp.tier + '</span>' +
+        '<span class="metaname">' + esc(comp.name) + '</span>' + chips +
+        '<span class="healbadge" title="Antall healer-specs">✚' + comp.healers + '</span>' + feas +
+        '</span><span class="rowbtns"><button class="btn small" data-act="trycomp" data-mi="' + mi + '"' +
+        (st ? '' : ' disabled title="Ingen av gutta kan bemanne denne nå (benk/70 tatt i betraktning)"') +
+        '>Prøv med gutta</button></span>' +
+        '<div class="metasub">' + comp.specs.join(' · ') + ' — ' + esc(comp.why) + '</div></div>');
+    });
+  const ossBtn = '<button class="pill' + (state.metaOnlyOss ? ' on' : '') + '" data-act="metaoss" aria-pressed="' + state.metaOnlyOss + '">Kun gutta</button>';
+  const listBody = rows.join('') ||
+    '<div class="empty">Ingen comps å vise' + (state.metaOnlyOss ? ' – skru av «Kun gutta»-filteret' : '') + '.</div>';
+  const legend = '<div class="legend">Research juli 2026, TBC 2.4.3 / TBC Classic. Fylt chip = healer-spec. «Prøv med gutta» setter compen på tavla — Lock-plasser og udekkede plasser blir random-plasser.</div>';
+  const compsSec = section('meta', 'Anbefalte comps · ' + state.teamSize + 'v' + state.teamSize,
+    '<span class="count">' + shown + '</span>', ossBtn, listBody + legend);
+
+  const ruleRows = META.rules.map(r =>
+    '<div class="comp"><span class="pairs">' +
+    '<span class="ckpill ' + (r.type === 'hard' ? 'hard' : '') + '">' + r.type + '</span>' +
+    '<span class="sizebadge">' + r.scope + '</span>' +
+    '<span style="font-weight:600">' + esc(r.rule) + '</span>' +
+    '</span><div class="metasub">' + esc(r.why) + '</div></div>'
+  ).join('');
+  const ruleLegend = '<div class="legend">Referanse — føringene er ikke koblet til reglene/sjekklista ennå. Si ifra hvilke som skal håndheves, så kodes de inn.</div>';
+  const rulesSec = section('metarules', 'Føringer fra researchen',
+    '<span class="count">' + META.rules.length + '</span>', '', ruleRows + ruleLegend);
+
+  const effRows = CLASS_KEYS.concat(['lock']).map(c => {
+    const def = META.dispel.defensive[c] || [];
+    const off = META.dispel.offensive.includes(c);
+    if (!def.length && !off) return '';
+    const info = clsInfo(c);
+    return '<div class="avrow"><span class="avcls" style="color:' + info.color + '">' + info.label + '</span>' +
+      '<span class="aventries">' +
+      (def.length ? def.map(t => '<span class="ckpill">' + t + '</span>').join('') : '<span class="dim" style="font-size:12px">ingen defensiv</span>') +
+      (off ? '<span class="ckpill ok">purge ✓</span>' : '') +
+      '</span></div>';
+  }).join('');
+  const msRow = '<div class="avrow"><span class="avcls" style="color:var(--gold)">MS-effekt</span><span class="aventries">' +
+    META.ms.classes.map(c => '<span class="ckpill">' + clsInfo(c).label + '</span>').join('') + '</span></div>';
+  const effSec = section('metaeff', 'Dispel & MS', '', '',
+    effRows + msRow +
+    '<div class="legend">' + esc(META.dispel.note) + '</div>' +
+    '<div class="legend">' + esc(META.ms.note) + '</div>');
+
+  const srcSec = section('kilder', 'Kilder', '<span class="count">' + META.sources.length + '</span>', '',
+    '<div class="srclist">' + META.sources.map(s =>
+      '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.title) + '</a>').join('') + '</div>');
+
+  return compsSec + rulesSec + effSec + srcSec;
+}
+
 function savedSection() {
   let body;
   if (!state.saved.length) {
@@ -675,6 +808,7 @@ function render() {
   const tabs = '<nav class="tabs">' +
     '<button class="' + (state.tab === 'build' ? 'on' : '') + '" data-act="tab" data-val="build">Lagbygging</button>' +
     '<button class="' + (state.tab === 'pug' ? 'on' : '') + '" data-act="tab" data-val="pug">Pugging</button>' +
+    '<button class="' + (state.tab === 'meta' ? 'on' : '') + '" data-act="tab" data-val="meta">Comps</button>' +
     '<button class="' + (state.tab === 'roster' ? 'on' : '') + '" data-act="tab" data-val="roster">Roster</button></nav>';
   const bracket = '<span class="seg">' + [2, 3, 5].map(n =>
     '<button class="' + (state.teamSize === n ? 'on' : '') + '" data-act="size" data-val="' + n + '">' + n + 'v' + n + '</button>'
@@ -686,6 +820,8 @@ function render() {
     view = boardSection() + filtersSection() + compsSection() + savedSection();
   } else if (state.tab === 'pug') {
     view = pugSection() + availSection() + savedSection();
+  } else if (state.tab === 'meta') {
+    view = metaView();
   } else {
     view = rosterSection() + savedSection();
   }
@@ -812,6 +948,35 @@ document.addEventListener('click', e => {
     state.shown += PAGE;
   } else if (act === 'sortby') {
     state.sortBy = t.dataset.val;
+    resetPage();
+  } else if (act === 'metaoss') {
+    state.metaOnlyOss = !state.metaOnlyOss;
+  } else if (act === 'trycomp') {
+    const comp = (META.comps[state.teamSize] || [])[Number(t.dataset.mi)];
+    if (!comp) return;
+    const st = findStaffing(comp);
+    if (!st) {
+      showToast('Ingen av gutta kan bemanne <b>' + esc(comp.name) + '</b> akkurat nå');
+      render();
+      return;
+    }
+    // spec-rollene fra compen styrer healer/dps-valget på tavla
+    const specQ = {};
+    comp.classes.forEach((c, i) => { (specQ[c] = specQ[c] || []).push(comp.specs[i]); });
+    for (const person of state.people) { person.sel = []; person.healerRole = null; }
+    for (const m of st.team) {
+      const person = personByName(m.name);
+      if (!person) continue;
+      const spec = (specQ[m.cls] || []).shift();
+      person.sel = [m.cls];
+      person.healerRole = regOf(person, m.cls) === 'both' && spec
+        ? metaSpecRole(m.cls, spec) === 'healer'
+        : null;
+    }
+    state.randomCount = Math.min(st.randoms, state.teamSize);
+    state.tab = 'build';
+    showToast('<b>' + esc(comp.name) + '</b> satt på tavla' +
+      (st.randoms ? ' – ' + st.randoms + ' plass' + (st.randoms > 1 ? 'er' : '') + ' som Random' : ''));
     resetPage();
   } else if (act === 'savecomp') {
     const team = listCache[Number(t.dataset.ti)];
