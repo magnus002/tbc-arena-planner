@@ -14,15 +14,17 @@ hvem spiller hvilken class/rolle, med regler og lagrede teams. Norsk UI.
 - **Ingen build-steg, ingen rammeverk.** Statisk side: `index.html` + `style.css`
   + `engine.js` + `app.js`. Hostes på GitHub Pages fra `main`:
   https://magnus002.github.io/tbc-arena-planner/ — merge til main = live.
-- **`engine.js` er delt sannhet**: domenedata (CLASSES, SPECS, DEFAULT_ROSTER)
-  og generatoren `findComps`. Lastes av nettleseren OG require-es av testene.
+- **`engine.js` er delt sannhet**: domenedata (CLASSES, SPECS, META,
+  DEFAULT_ROSTER) og generatoren `findComps`. Lastes av nettleseren OG require-es av testene.
   ALDRI kopier logikk fra engine inn i app eller tester.
 - `app.js`: UI-tilstand (`state`), rendering (innerHTML-re-render av alt per
   interaksjon — bevisst enkelt; tekstfelt-verdier bevares i `render()`),
-  hendelses-delegering via `data-act`. Tre faner: Lagbygging (tavla, filtre/
+  hendelses-delegering via `data-act`. Fire faner: Lagbygging (tavla, filtre/
   regler, gyldige lag med sortering), Pugging (brainstorm: comp-stripe,
-  sjekkliste, tilgjengelig-oversikt, random-plasser) og Roster — alle deler
-  samme state. Seksjonene er kollapsbare og har id `#sec-<navn>`.
+  sjekkliste, tilgjengelig-oversikt, random-plasser), Comps (META-referansen:
+  tier-lister per bracket, føringer, dispel/MS, «Prøv med gutta» som bemanner
+  en comp fra rosteren via motoren — hull/Lock blir random-plasser) og
+  Roster — alle deler samme state. Seksjonene er kollapsbare, id `#sec-<navn>`.
 - `tests/verify.js`: uavhengig brute-force-oracle. Poenget er at oracle og
   motor er to separate implementasjoner — en ny regel legges til BEGGE steder.
 - `tests/smoke.js`: playwright-klikktest av hovedflytene mot `file://`.
@@ -67,6 +69,11 @@ hvem spiller hvilken class/rolle, med regler og lagrede teams. Norsk UI.
 
 - Heal-capable classes: pala, priest, sham, druid. Dispellere: pala, priest.
 - Spec-katalogen ligger klar i `engine.js` (`SPECS`, ennå ikke koblet på UI).
+- `META` i engine.js: research-basert referanse (comps/tier per bracket,
+  føringer, dispel-taksonomi, MS-effekt, kilder) — vises i Comps-fanen, men
+  er IKKE koblet til reglene/sjekklista ennå; det krever vedtak fra Magnus.
+  `tests/verify.js` har integritetssjekk av META mot SPECS. Warlock (`lock`)
+  finnes kun i META (`META.extraClasses`), ikke i CLASSES.
 - WoW-classfarger ligger i `CLASSES` — behold dem i redesign; de bærer mye
   gjenkjennelse (sham-blå er justert lysere for mørk bakgrunn).
 

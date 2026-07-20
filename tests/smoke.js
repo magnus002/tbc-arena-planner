@@ -122,6 +122,19 @@ const { chromium } = require('playwright');
   t.druidMark = druidChip.includes('✚') && !druidChip.includes('⚔');
   t.hunterN70 = (await text('#sec-board [data-act="selchip"][data-pi="2"][data-cls="hunter"]')).includes('70');
 
+  // Comps-fanen: tier-liste for 5v5, «Prøv med gutta» setter compen på tavla.
+  // (Runar-hunter er <70 fra forrige steg → hunter-plassen i Hunter Cleave
+  // dekkes automatisk som random.)
+  await click('[data-act="tab"][data-val="meta"]');
+  t.metaCount = (await text('#sec-meta .sechead .count')) === '15';
+  t.metaTierFirst = (await text('#sec-meta .comp .tier')) === 'S';
+  t.metaRules = (await text('#sec-metarules .sechead .count')) === '15';
+  t.metaDispel = (await text('#sec-metaeff')).includes('purge');
+  await click('[data-act="trycomp"][data-mi="12"]'); // Hunter Cleave
+  t.tryCompBoard = (await text('#sec-board .sechead .count')) === '5/5';
+  t.tryCompValid = (await text('#savebar .stat')).includes('gyldig lag');
+  await click('[data-act="clear"]');
+
   // Kollaps: tavla lukkes og åpnes
   await click('#sec-board .sechead');
   t.collapsed = (await page.locator('#sec-board .secbody').count()) === 0;

@@ -121,6 +121,22 @@ h1 { font-size: 19px; color: var(--gold); margin: 0; letter-spacing: 0.3px; font
 .ckpill.bad { color: var(--red); border-color: var(--red); }
 .ckpill.rnd { border-style: dashed; cursor: pointer; }
 
+/* ---------- comps-fanen (META-referanse) ---------- */
+.tier {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 6px; font-size: 12px; font-weight: 700;
+  border: 1px solid; flex-shrink: 0;
+}
+.tier.S { color: var(--gold); border-color: var(--gold); background: var(--gold-soft); }
+.tier.A { color: var(--green); border-color: rgba(125, 201, 94, 0.5); }
+.tier.B { color: var(--dim); border-color: var(--border); }
+.metaname { font-weight: 700; margin-right: 2px; }
+.metasub { grid-column: 1 / -1; color: var(--dim); font-size: 12px; }
+.ckpill.hard { color: var(--gold); border-color: var(--gold); }
+.srclist { display: flex; flex-direction: column; gap: 6px; }
+.srclist a { color: var(--gold); font-size: 12.5px; }
+.srclist a:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+
 /* ---------- tilgjengelig per class ---------- */
 .avrow { display: grid; grid-template-columns: 76px 1fr; gap: 8px; align-items: start; padding: 7px 0; border-top: 1px solid var(--border); }
 .avrow:first-child { border-top: 0; }

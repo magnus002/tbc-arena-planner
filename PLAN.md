@@ -46,6 +46,12 @@ Erstatt `roles{cls: healer|dps|both}` med spec-registrering per char:
 > like comps samlet / flest healers / flest dispellere); ny «Pugging»-fane
 > spesialisert for comp-brainstorm (comp-stripe med ledige plasser,
 > sjekkliste, tilgjengelig-oversikt, random) — Lagbygging-fanen er roligere.
+>
+> **Iterasjon 3 (juli 2026):** ny «Comps»-fane med research-basert META-data
+> (engine.js): tier-lister per bracket med «Prøv med gutta»-bemanning via
+> motoren, føringer (hard/myk), dispel/MS-oversikt og kilder. Neste vedtak:
+> hvilke føringer skal håndheves i regler/sjekkliste (purge-, poison-,
+> curse- og MS-sjekk krever små motor-/sjekklisteutvidelser).
 
 Kjente problemer å løse:
 
