@@ -1,10 +1,10 @@
 'use strict';
 /*
- * engine.js — domenemotoren for TBC Arena Lagplanlegger.
+ * engine.js — domain engine for the TBC Arena Team Planner.
  *
- * VIKTIG: Denne fila deles av appen (index.html laster den før app.js) og
- * testene (tests/verify.js require-er den). Ikke kopier logikk herfra inn i
- * app eller tester — endre HER, og kjør `npm test` + `npm run smoke`.
+ * IMPORTANT: This file is shared by the app (index.html loads it before app.js) and
+ * the tests (tests/verify.js requires it). Do not copy logic from here into
+ * the app or tests — change it HERE, and run `npm test` + `npm run smoke`.
  */
 
 const CLASSES = {
@@ -22,9 +22,9 @@ const MAX_RESULTS = 800;
 const DISPEL = ['pala', 'priest']; // dispellers (Cleanse / Dispel Magic)
 
 /*
- * TBC-spec-katalog. IKKE koblet på UI/motor ennå — se PLAN.md punkt 2
- * (spec-modellen skal erstatte dagens healer/dps/begge-registrering).
- * role: 'healer' | 'dps'. Feral/Prot o.l. er forenklet til 'dps' i arena-kontekst.
+ * TBC spec catalog. NOT wired into the UI/engine yet — see PLAN.md item 2
+ * (the spec model is meant to replace the current healer/dps/both registration).
+ * role: 'healer' | 'dps'. Feral/Prot etc. are simplified to 'dps' in an arena context.
  */
 const SPECS = {
   warr:   [{ key: 'arms', label: 'Arms', role: 'dps' }, { key: 'fury', label: 'Fury', role: 'dps' }, { key: 'prot', label: 'Prot', role: 'dps' }],
@@ -38,115 +38,116 @@ const SPECS = {
 };
 
 /*
- * META — research-basert referansedata om TBC-arenacomps (kilde: dyp-research
- * juli 2026, se META.sources). Vises i «Comps»-fanen. IKKE koblet til
- * reglene/generatoren ennå — føringene er referanse til Magnus vedtar hvilke
- * som skal håndheves. 'lock' (Warlock) finnes ikke i CLASSES (ingen i gjengen
- * spiller det); comps med lock bemannes via random-plasser i UI-et.
+ * META — research-based reference data about TBC arena comps (source: deep
+ * research July 2026, see META.sources). Shown in the "Comps" tab. NOT wired
+ * into the rules/generator yet — the guidelines are reference material until
+ * Magnus decides which ones to enforce. 'lock' (Warlock) does not exist in
+ * CLASSES (nobody in the crew plays it); comps that include lock are staffed
+ * via random slots in the UI.
  */
 const META = {
   extraClasses: { lock: { label: 'Lock', color: '#9482C9', healer: false } },
   comps: {
     5: [
       { name: 'Eurocomp (Triple Healer)', classes: ['warr', 'lock', 'sham', 'pala', 'priest'], specs: ['arms', 'affli', 'resto', 'holy', 'disc'], healers: 3, tier: 'S',
-        why: 'Standard-metaen: tre healers, Warr+Lock-attrition, Mana Burn og Bloodlust som drapsvinduer. Sterkest S3–S4.' },
+        why: 'The standard meta: three healers, Warr+Lock attrition, Mana Burn and Bloodlust as kill windows. Strongest in S3–S4.' },
       { name: 'Melee Cleave (Warr/Rogue/Lock)', classes: ['warr', 'rogue', 'lock', 'druid', 'priest'], specs: ['arms', 'sub', 'affli', 'resto', 'disc'], healers: 2, tier: 'S',
-        why: 'Mer drapspress enn Eurocomp via Rogue-burst; CC-kjeder fra Rogue+Lock+Druid låser fiendens healere.' },
+        why: 'More kill pressure than Eurocomp via Rogue burst; CC chains from Rogue+Lock+Druid lock down the enemy healers.' },
       { name: '2346 (Warr/Ele/Lock)', classes: ['warr', 'sham', 'lock', 'priest', 'pala'], specs: ['arms', 'ele', 'affli', 'disc', 'holy'], healers: 2, tier: 'A',
-        why: 'MS + Ele-burst med Curse of Tongues som langspill-plan; solo-Warrioren er hovedmål.' },
+        why: 'MS + Ele burst with Curse of Tongues as the long-game plan; the solo Warrior is the primary target.' },
       { name: '2347 (Hunter/Ele/Lock)', classes: ['hunter', 'sham', 'lock', 'priest', 'pala'], specs: ['mm', 'ele', 'destro', 'disc', 'holy'], healers: 2, tier: 'A',
-        why: 'Aimed Shot + Ele/Destro-burst, alle ranged, mange dispels; kast-avhengig og curse-sårbar.' },
+        why: 'Aimed Shot + Ele/Destro burst, all ranged, lots of dispels; cast-reliant and curse-vulnerable.' },
       { name: '2345 (Warr/Ele/Mage)', classes: ['warr', 'sham', 'mage', 'priest', 'pala'], specs: ['arms', 'ele', 'frost', 'disc', 'holy'], healers: 2, tier: 'A',
-        why: 'Lock-fri burst-variant, men cooldown- og mana-avhengig.' },
+        why: 'Lock-free burst variant, but cooldown- and mana-dependent.' },
       { name: 'Caster Cleave (Mage/Lock)', classes: ['mage', 'lock', 'priest', 'druid', 'sham'], specs: ['frost', 'affli', 'disc', 'resto', 'resto'], healers: 3, tier: 'A',
-        why: 'CC-dybde (Poly/Fear/Cyclone) og Blizzard-AoE med BL-vindu; taper mot gap-closers.' },
+        why: 'CC depth (Poly/Fear/Cyclone) and Blizzard AoE with a BL window; loses to gap-closers.' },
       { name: 'TriHealer Drain', classes: ['hunter', 'lock', 'priest', 'sham', 'pala'], specs: ['mm', 'affli', 'disc', 'resto', 'holy'], healers: 3, tier: 'A',
-        why: 'Viper Sting + Drain Mana + Mana Burn vinner uten dps; melee-cleave er hard counter.' },
+        why: 'Viper Sting + Drain Mana + Mana Burn wins without dps; melee cleave is a hard counter.' },
       { name: 'Shadowplay Plus', classes: ['sham', 'mage', 'lock', 'priest', 'pala'], specs: ['ele', 'frost', 'destro', 'shadow', 'holy'], healers: 1, tier: 'A',
-        why: 'Mye ikke-DR CC og høy skade, men ingen MS og lav healing — unntaket som bekrefter 2–3-healer-normen.' },
+        why: 'Lots of non-DR CC and high damage, but no MS and low healing — the exception that proves the 2–3-healer norm.' },
       { name: 'Windfury Cleave', classes: ['warr', 'pala', 'sham', 'priest', 'pala'], specs: ['arms', 'ret', 'enh', 'disc', 'holy'], healers: 2, tier: 'B',
-        why: 'WF-burst + MS, dokumentert dobbel-paladin (Ret + Holy).' },
+        why: 'WF burst + MS, documented double-paladin (Ret + Holy).' },
       { name: '3 DPS / 2 Healer Balanced', classes: ['warr', 'lock', 'mage', 'druid', 'pala'], specs: ['arms', 'affli', 'frost', 'resto', 'holy'], healers: 2, tier: 'B',
-        why: 'Balansert press og ok robusthet, men verken triple-healer-soliditet eller caster-CC.' },
+        why: 'Balanced pressure and okay durability, but neither triple-healer solidity nor caster CC.' },
       { name: '4 DPS Zerg', classes: ['warr', 'rogue', 'mage', 'lock', 'priest'], specs: ['arms', 'sub', 'frost', 'affli', 'disc'], healers: 1, tier: 'B',
-        why: 'All-in: drep på 30 sek eller tap. Reelt C-tier — ikke konkurransedyktig høyt.' },
-      { name: 'Euro-variant m/ Ele', classes: ['warr', 'sham', 'priest', 'pala', 'druid'], specs: ['arms', 'ele', 'disc', 'holy', 'resto'], healers: 3, tier: 'A',
-        why: 'Nærmeste S-tilnærming uten Lock: MS, Ele-burst, dobbel purge, BL og full dispel-dekning.' },
+        why: 'All-in: kill in 30 seconds or lose. Realistically C-tier — not competitive at a high level.' },
+      { name: 'Euro Variant w/ Ele', classes: ['warr', 'sham', 'priest', 'pala', 'druid'], specs: ['arms', 'ele', 'disc', 'holy', 'resto'], healers: 3, tier: 'A',
+        why: 'The closest S-tier approach without Lock: MS, Ele burst, double purge, BL, and full dispel coverage.' },
       { name: 'Hunter Cleave', classes: ['warr', 'hunter', 'sham', 'pala', 'druid'], specs: ['arms', 'mm', 'ele', 'holy', 'resto'], healers: 2, tier: 'B',
-        why: 'Helt in-house for gjengen: dobbel MS-kilde (MS + Aimed), Viper Sting, purge og BL.' },
-      { name: 'RMP + dobbel støtte', classes: ['rogue', 'mage', 'priest', 'pala', 'druid'], specs: ['sub', 'frost', 'disc', 'holy', 'resto'], healers: 3, tier: 'B',
-        why: 'In-house 3-healer med mye CC, men ingen Shaman (mangler BL/Purge) og MS kun via Wound Poison. CC er devaluert i 5v5.' },
+        why: 'Fully in-house for the crew: double MS source (MS + Aimed), Viper Sting, purge, and BL.' },
+      { name: 'RMP + Double Support', classes: ['rogue', 'mage', 'priest', 'pala', 'druid'], specs: ['sub', 'frost', 'disc', 'holy', 'resto'], healers: 3, tier: 'B',
+        why: 'In-house 3-healer with lots of CC, but no Shaman (missing BL/Purge) and MS only via Wound Poison. CC is devalued in 5v5.' },
       { name: 'Turbo Melee', classes: ['warr', 'rogue', 'sham', 'pala', 'druid'], specs: ['arms', 'sub', 'ele', 'holy', 'resto'], healers: 2, tier: 'B',
-        why: 'In-house press-comp med MS+Wound og BL; sårbar for kiting og AoE-CC.' },
+        why: 'In-house pressure comp with MS+Wound and BL; vulnerable to kiting and AoE CC.' },
     ],
     3: [
       { name: 'RMP', classes: ['rogue', 'mage', 'priest'], specs: ['sub', 'frost', 'disc'], healers: 1, tier: 'S',
-        why: 'Best burst og CC-register, uforutsigbare swaps; mana-svak og mest koordinasjonskrevende.' },
+        why: 'Best burst and CC toolkit, unpredictable swaps; mana-weak and the most coordination-demanding.' },
       { name: 'WLD', classes: ['warr', 'lock', 'druid'], specs: ['arms', 'affli', 'resto'], healers: 1, tier: 'S',
-        why: 'Svært robust drain-krig med raske swaps; definerer metaen sammen med RMP.' },
+        why: 'Very robust drain war with fast swaps; defines the meta alongside RMP.' },
       { name: 'RLP', classes: ['rogue', 'lock', 'priest'], specs: ['sub', 'affli', 'disc'], healers: 1, tier: 'A',
-        why: 'Allsidig skade og interrupts; RLD-varianten bytter dispel (Priest) mot ekstra CC (Druid).' },
+        why: 'Versatile damage and interrupts; the RLD variant trades dispel (Priest) for extra CC (Druid).' },
       { name: 'Shadowplay', classes: ['lock', 'priest', 'sham'], specs: ['affli', 'shadow', 'resto'], healers: 1, tier: 'A',
-        why: 'Best spread-skade pluss Bloodlust og mange dispels; lav mobilitet og burst.' },
+        why: 'Best spread damage plus Bloodlust and lots of dispels; low mobility and burst.' },
       { name: '2-Healer Warrior', classes: ['warr', 'sham', 'pala'], specs: ['arms', 'resto', 'holy'], healers: 2, tier: 'A',
-        why: 'MS + totems + purge + enorm healing; all skade på Warrioren, curse-sårbar.' },
+        why: 'MS + totems + purge + huge healing; all the damage rides on the Warrior, curse-vulnerable.' },
       { name: '2-Healer Hunter (Drain)', classes: ['hunter', 'priest', 'druid'], specs: ['mm', 'disc', 'resto'], healers: 2, tier: 'A',
-        why: 'Mana Burn + Viper Sting vinner uten dps.' },
+        why: 'Mana Burn + Viper Sting wins without dps.' },
       { name: 'Ret Cleave', classes: ['warr', 'pala', 'sham'], specs: ['arms', 'ret', 'resto'], healers: 1, tier: 'A',
-        why: 'Massiv Windfury-burst med begge dispel-retninger; RNG-avhengig og lett å kite.' },
+        why: 'Massive Windfury burst with both dispel directions covered; RNG-dependent and easy to kite.' },
       { name: 'Warrior Turbo', classes: ['warr', 'sham', 'druid'], specs: ['arms', 'enh', 'resto'], healers: 1, tier: 'B',
-        why: 'Høy burst med BL og totems; gear-avhengig og root-sårbar.' },
+        why: 'High burst with BL and totems; gear-dependent and root-vulnerable.' },
     ],
     2: [
       { name: 'Rogue + Disc Priest', classes: ['rogue', 'priest'], specs: ['sub', 'disc'], healers: 1, tier: 'S',
-        why: 'Priest fjerner CC/debuffs så Roguen kan restealthe gjentatte ganger; Priesten er selv train-mål.' },
+        why: 'Priest removes CC/debuffs so the Rogue can restealth repeatedly; the Priest is itself the train target.' },
       { name: 'Mage + Rogue', classes: ['mage', 'rogue'], specs: ['frost', 'sub'], healers: 0, tier: 'S',
-        why: 'Best opener og burst i bracketen; null healing, så alt avgjøres i setups.' },
+        why: 'Best opener and burst in the bracket; zero healing, so everything is decided in the setups.' },
       { name: 'SL-Lock + Resto Druid', classes: ['lock', 'druid'], specs: ['affli', 'resto'], healers: 1, tier: 'S',
-        why: 'Den beryktede drain-kongen; nærmest udrepelig, sterkest S3–S4 med resilience.' },
+        why: 'The infamous drain king; nearly unkillable, strongest in S3–S4 with resilience.' },
       { name: 'SL-Lock + Rogue', classes: ['lock', 'rogue'], specs: ['affli', 'sub'], healers: 0, tier: 'A',
-        why: 'Sterk allround-skade med mange interrupts; kun felhunter som dispel.' },
+        why: 'Strong all-round damage with lots of interrupts; only the felhunter for dispel.' },
       { name: 'Warr + Resto Druid', classes: ['warr', 'druid'], specs: ['arms', 'resto'], healers: 1, tier: 'A',
-        why: 'Svært slitesterk, druiden drikker lett; lav samlet skade.' },
+        why: 'Very durable, the druid can drink easily; low overall damage.' },
       { name: 'Rogue + Resto Druid', classes: ['rogue', 'druid'], specs: ['sub', 'resto'], healers: 1, tier: 'A',
-        why: 'Dobbel stealth og CC utenfor delt DR (Kidney/Cyclone/Blind); mangler dispels helt.' },
+        why: 'Double stealth and CC outside shared DR (Kidney/Cyclone/Blind); completely lacks dispels.' },
       { name: 'Affli Lock + Shadow Priest', classes: ['lock', 'priest'], specs: ['affli', 'shadow'], healers: 0, tier: 'A',
-        why: 'Best spread-skade, silences og fears; lav mobilitet og burst.' },
+        why: 'Best spread damage, silences and fears; low mobility and burst.' },
       { name: 'Warr + Resto Shaman', classes: ['warr', 'sham'], specs: ['arms', 'resto'], healers: 1, tier: 'B',
-        why: 'Høyt offensivt potensial med totems; root- og curse-sårbar.' },
+        why: 'High offensive potential with totems; root- and curse-vulnerable.' },
     ],
   },
   rules: [
-    { rule: '5v5-lag skal ha 2 eller 3 healers.', type: 'hard', scope: '5v5', hint: 'healerFilter',
-      why: '9 av 11 kanoniske topp-comps har 2–3 healers; 1-healer-varianter er all-in/nisje.' },
-    { rule: 'Velg 3 healers i 5v5 bare når laget har vedvarende press (Warr/Lock/Ele) og planlegger mana-krig.', type: 'myk', scope: '5v5', hint: 'healerFilter',
-      why: 'Triple healer uten attrition-skade mangler vinnebetingelse.' },
-    { rule: '3v3-lag skal ha 1 eller 2 healers.', type: 'hard', scope: '3v3', hint: 'healerFilter',
-      why: 'Både 1-healer (RMP/WLD) og 2-healer (Warr/Hunter-varianter) er topp-tier i TBC.' },
-    { rule: '2v2-lag skal ha 0 eller 1 healer, aldri 2.', type: 'hard', scope: '2v2', hint: 'healerFilter',
-      why: 'Dobbel-DPS (Mage/Rogue) er S-tier; dobbel healer mangler vinnebetingelse.' },
-    { rule: 'Minst 1 defensiv magic-dispeller (Paladin eller Priest) i 5v5.', type: 'hard', scope: '5v5', hint: 'needDispel',
-      why: 'Samtlige kanoniske topp-5s har Pala og/eller Priest; Poly/Fear/DoTs må kunne fjernes.' },
-    { rule: 'Minst 1 offensiv purger (Priest, Shaman eller Warlock-felhunter) i 5v5.', type: 'hard', scope: '5v5', hint: 'needDispel',
-      why: 'Topp-5s har typisk 2–3 purgere; buffs/HoTs/Earth Shield må kunne rives.' },
-    { rule: 'Uten poison-fjerner (Paladin, Druid eller Shaman): advar.', type: 'myk', scope: 'alle', hint: 'needDispel',
-      why: 'Wound/Crippling Poison blir ellers stående mot rogues.' },
-    { rule: 'Uten curse-fjerner (Mage eller Druid): advar om Curse of Tongues-sårbarhet.', type: 'myk', scope: 'alle', hint: 'needDispel',
-      why: 'Curse-hullet er den oftest nevnte svakheten i topp-comps med casters/healere.' },
-    { rule: 'Uten MS-effekt (Arms Warrior, MM Hunter eller Rogue m/ Wound Poison): advar.', type: 'myk', scope: 'alle', hint: 'nytt-konsept',
-      why: '50 % healing-reduksjon står i de fleste topp-comps; unntak er rene drain-lag.' },
-    { rule: '5v5-lag bør ha minst 1 Shaman (Bloodlust, Purge, totems).', type: 'myk', scope: '5v5', hint: 'mustHave',
-      why: 'Shaman står i 8 av 11 kanoniske 5s-comps; sterk norm men ikke absolutt.' },
-    { rule: 'Maks 1 av hver class som standard.', type: 'hard', scope: 'alle', hint: 'caps',
-      why: 'Ingen topp-comp dublerer classes utenom dokumenterte unntak.' },
-    { rule: 'Unntak: tillat 2 paladiner (Holy + Ret) i 5v5.', type: 'myk', scope: '5v5', hint: 'caps',
-      why: 'Windfury Cleave med Ret+Holy er dokumentert (Icy Veins).' },
-    { rule: '2 shamans eller 2 priests i 5v5: tillat med advarsel (usikkert belegg).', type: 'myk', scope: '5v5', hint: 'caps',
-      why: 'Anekdotisk fra original-TBC (Ele+Resto med dobbel-BL i 2.4.3; Disc+Shadow); ikke i hovedkildene.' },
-    { rule: '2 rogues: kun akseptabelt i 3v3, ellers advar.', type: 'myk', scope: 'alle', hint: 'caps',
-      why: 'Dobbel-rogue er kjent 3v3-cheese, ikke belagt høyt i andre brackets.' },
-    { rule: 'Krev en uttalt vinnebetingelse per lag: cleave, caster, drain eller turtle.', type: 'myk', scope: 'alle', hint: 'nytt-konsept',
-      why: 'Alle topp-comps tilhører en tydelig arketype; blandingslag uten plan er B-tier-mønsteret.' },
+    { rule: 'A 5v5 team should have 2 or 3 healers.', type: 'hard', scope: '5v5', hint: 'healerFilter',
+      why: '9 of 11 canonical top comps have 2–3 healers; 1-healer variants are all-in/niche.' },
+    { rule: 'Only pick 3 healers in 5v5 when the team has sustained pressure (Warr/Lock/Ele) and plans a mana war.', type: 'soft', scope: '5v5', hint: 'healerFilter',
+      why: 'Triple healer without attrition damage lacks a win condition.' },
+    { rule: 'A 3v3 team should have 1 or 2 healers.', type: 'hard', scope: '3v3', hint: 'healerFilter',
+      why: 'Both 1-healer (RMP/WLD) and 2-healer (Warr/Hunter variants) are top-tier in TBC.' },
+    { rule: 'A 2v2 team should have 0 or 1 healer, never 2.', type: 'hard', scope: '2v2', hint: 'healerFilter',
+      why: 'Double-DPS (Mage/Rogue) is S-tier; double healer lacks a win condition.' },
+    { rule: 'At least 1 defensive magic dispeller (Paladin or Priest) in 5v5.', type: 'hard', scope: '5v5', hint: 'needDispel',
+      why: 'Every canonical top 5s comp has Pala and/or Priest; Poly/Fear/DoTs need to be removable.' },
+    { rule: 'At least 1 offensive purger (Priest, Shaman, or Warlock felhunter) in 5v5.', type: 'hard', scope: '5v5', hint: 'needDispel',
+      why: 'Top 5s comps typically run 2–3 purgers; buffs/HoTs/Earth Shield need to be strippable.' },
+    { rule: 'Without a poison remover (Paladin, Druid, or Shaman): warn.', type: 'soft', scope: 'all', hint: 'needDispel',
+      why: 'Otherwise Wound/Crippling Poison sticks against rogues.' },
+    { rule: 'Without a curse remover (Mage or Druid): warn about Curse of Tongues vulnerability.', type: 'soft', scope: 'all', hint: 'needDispel',
+      why: 'The curse gap is the most frequently cited weakness in top comps with casters/healers.' },
+    { rule: 'Without an MS effect (Arms Warrior, MM Hunter, or Rogue w/ Wound Poison): warn.', type: 'soft', scope: 'all', hint: 'new-concept',
+      why: '50% healing reduction is present in most top comps; the exception is pure drain teams.' },
+    { rule: 'A 5v5 team should have at least 1 Shaman (Bloodlust, Purge, totems).', type: 'soft', scope: '5v5', hint: 'mustHave',
+      why: 'Shaman appears in 8 of 11 canonical 5s comps; a strong norm but not absolute.' },
+    { rule: 'Max 1 of each class by default.', type: 'hard', scope: 'all', hint: 'caps',
+      why: 'No top comp duplicates classes outside of documented exceptions.' },
+    { rule: 'Exception: allow 2 paladins (Holy + Ret) in 5v5.', type: 'soft', scope: '5v5', hint: 'caps',
+      why: 'Windfury Cleave with Ret+Holy is documented (Icy Veins).' },
+    { rule: '2 shamans or 2 priests in 5v5: allow with a warning (uncertain evidence).', type: 'soft', scope: '5v5', hint: 'caps',
+      why: 'Anecdotal from original TBC (Ele+Resto with double-BL in 2.4.3; Disc+Shadow); not in the main sources.' },
+    { rule: '2 rogues: only acceptable in 3v3, otherwise warn.', type: 'soft', scope: 'all', hint: 'caps',
+      why: 'Double-rogue is a known 3v3 cheese, not well-documented at a high level in other brackets.' },
+    { rule: 'Require a stated win condition per team: cleave, caster, drain, or turtle.', type: 'soft', scope: 'all', hint: 'new-concept',
+      why: 'Every top comp belongs to a clear archetype; mixed teams without a plan are the B-tier pattern.' },
   ],
   dispel: {
     defensive: {
@@ -158,11 +159,11 @@ const META = {
       lock: ['magic'],
     },
     offensive: ['priest', 'sham', 'lock', 'mage'],
-    note: 'Cleanse fjerner 1 poison + 1 disease + 1 magic per kast. Dispel Magic r2 og Purge r2 fjerner 2 effekter per kast. Abolish Poison/Disease er tick-varianter. Priest Mass Dispel (ny i TBC) fjerner også immuniteter (Divine Shield/Ice Block). Lock = felhunter Devour Magic, virker både defensivt og offensivt (1 effekt). Mage-offensiv = Spellsteal (stjeler buffen). Nisje: Warrior Shield Slam dispeller 1 magic (krever skjold); Hunter Tranq Shot fjerner kun frenzy/enrage i TBC. Warr/Rogue/Hunter har ingen defensiv dispel. Sham kan IKKE dispelle magic i TBC.',
+    note: 'Cleanse removes 1 poison + 1 disease + 1 magic per cast. Dispel Magic r2 and Purge r2 remove 2 effects per cast. Abolish Poison/Disease are tick variants. Priest Mass Dispel (new in TBC) also removes immunities (Divine Shield/Ice Block). Lock = felhunter Devour Magic, works both defensively and offensively (1 effect). Mage offensive = Spellsteal (steals the buff). Niche: Warrior Shield Slam dispels 1 magic effect (requires a shield); Hunter Tranq Shot only removes frenzy/enrage in TBC. Warr/Rogue/Hunter have no defensive dispel. Sham can NOT dispel magic in TBC.',
   },
   ms: {
     classes: ['warr', 'hunter', 'rogue'],
-    note: 'Arms Warrior Mortal Strike: 50 % i 10 sek. MM Hunter Aimed Shot (talent): 50 % i 10 sek. Rogue Wound Poison: 10 % per stack, maks 5 = 50 % (alle specs, men dispellbar poison). Fra patch 2.1 stacker de tre IKKE med hverandre.',
+    note: 'Arms Warrior Mortal Strike: 50% for 10 sec. MM Hunter Aimed Shot (talent): 50% for 10 sec. Rogue Wound Poison: 10% per stack, max 5 = 50% (any spec, but dispellable poison). As of patch 2.1 the three do NOT stack with each other.',
   },
   sources: [
     { title: 'Icy Veins – TBC 5v5 Arena Composition Tier List', url: 'https://www.icy-veins.com/tbc-classic/5v5-arena-composition-rankings' },
@@ -175,11 +176,11 @@ const META = {
     { title: 'Wowhead TBC – Aimed Shot', url: 'https://www.wowhead.com/tbc/spell=27065/aimed-shot' },
     { title: 'Wowhead TBC – Cleanse', url: 'https://www.wowhead.com/tbc/spell=4987/cleanse' },
     { title: 'Wowhead TBC – Dispel Magic', url: 'https://www.wowhead.com/tbc/spell=527/dispel-magic' },
-    { title: 'Wowpedia – Wound Poison (patch-historikk)', url: 'https://wowpedia.fandom.com/wiki/Wound_Poison' },
+    { title: 'Wowpedia – Wound Poison (patch history)', url: 'https://wowpedia.fandom.com/wiki/Wound_Poison' },
     { title: 'Wowpedia – Dispel', url: 'https://wowpedia.fandom.com/wiki/Dispel' },
     { title: 'MMO-Champion – Dispeling abilities of each class (2007)', url: 'https://www.mmo-champion.com/threads/603872-Dispeling-abilities-of-each-class' },
-    { title: 'Warcraft Tavern – Heroism/Bloodlust-endring i Anniversary', url: 'https://www.warcrafttavern.com/tbc/news/heroism-bloodlust-will-reset-for-bosses-in-tbc-classic-anniversary-edition/' },
-    { title: 'MMO-Champion – Bloodlust i original-TBC (ingen Sated)', url: 'https://www.mmo-champion.com/threads/2586733-Should-they-change-bloodlust-heroism-in-BC/page4' },
+    { title: 'Warcraft Tavern – Heroism/Bloodlust change in Anniversary', url: 'https://www.warcrafttavern.com/tbc/news/heroism-bloodlust-will-reset-for-bosses-in-tbc-classic-anniversary-edition/' },
+    { title: 'MMO-Champion – Bloodlust in original TBC (no Sated)', url: 'https://www.mmo-champion.com/threads/2586733-Should-they-change-bloodlust-heroism-in-BC/page4' },
   ],
 };
 
@@ -196,14 +197,14 @@ function is70(p, cls) {
   return !(p.not70 || []).includes(cls);
 }
 
-// Registrert rolle for en char: hybrids (heal-capable classes) default 'both', andre alltid 'dps'
+// Registered role for a character: hybrids (heal-capable classes) default to 'both', others are always 'dps'
 function regOf(p, cls) {
   if (!CLASSES[cls].healer) return 'dps';
   return (p.roles && p.roles[cls]) || 'both';
 }
 
-// Hvilke av personens valgte classes (sel[]) rollevalget på tavla tillater:
-// «Healer» utelukker rene ⚔-registreringer, «DPS» utelukker rene ✚-registreringer.
+// Which of the person's selected classes (sel[]) the board's role choice allows:
+// "Healer" excludes pure ⚔ registrations, "DPS" excludes pure ✚ registrations.
 function selOptions(p) {
   let opts = p.sel || [];
   if (p.healerRole === true) opts = opts.filter(c => regOf(p, c) !== 'dps');
@@ -216,17 +217,17 @@ function selOptions(p) {
  *
  * people: [{ name, classes[], benched, sel[], healerRole(true|false|null), not70[], roles{} }]
  * opts:   { teamSize, mustHave(Set), healerWanted(null|int), only70(bool),
- *           caps({cls: maks} — class uten oppføring = ubegrenset), needDispel(bool) }
+ *           caps({cls: max} — a class with no entry = unlimited), needDispel(bool) }
  *
- * Regler: tak per class, valgfritt dispeller-krav (minst 1 pala/priest) og
- * valgfritt eksakt antall healers. roleMode (healer-filter aktivt):
- * 'healer'-chars teller alltid som healer, 'dps'-chars aldri, '✚⚔'-chars
- * grenes i begge roller — med mindre rollen er valgt på tavla (healerRole).
- * Uten filter genereres hvert class-oppsett én gang; heal-flagget settes da
- * kun for 'healer'-registrerte (visning). Valgte personer (sel[] ikke tom)
- * er harde føringer: de er alltid med, på en av de valgte classene —
- * rollevalget kan snevre inn hvilke (selOptions). Utelukker rollevalget
- * alle valgte classes, finnes ingen gyldige lag.
+ * Rules: a cap per class, an optional dispeller requirement (at least 1 pala/priest), and
+ * an optional exact healer count. roleMode (healer filter active):
+ * 'healer' characters always count as healer, 'dps' characters never do, '✚⚔'
+ * characters branch into both roles — unless the role is chosen on the board (healerRole).
+ * Without the filter, each class combination is generated once; the heal flag is then set
+ * only for those registered as 'healer' (for display). Selected people (sel[] not empty)
+ * are hard constraints: they are always included, on one of the selected classes —
+ * the role choice can narrow down which ones (selOptions). If the role choice
+ * excludes all selected classes, no valid teams exist.
  */
 function findComps(people, opts) {
   const { teamSize, mustHave, healerWanted, only70, caps, needDispel } = opts;
@@ -263,7 +264,7 @@ function findComps(people, opts) {
     }
     const p = candidates[i];
     if (p.sel && p.sel.length) {
-      // valgt person: alltid med, på en av de valgte classene — ingen «stå over»-gren
+      // selected person: always included, on one of the selected classes — no "sit out" branch
       if (team.length >= teamSize) return;
       for (const c of selOptions(p)) {
         if ((counts[c] || 0) >= capOf(c)) continue;
@@ -290,7 +291,7 @@ function findComps(people, opts) {
           }
         }
       }
-      rec(i + 1, team, healCount); // personen står over
+      rec(i + 1, team, healCount); // the person sits out
     }
   }
 
@@ -298,7 +299,7 @@ function findComps(people, opts) {
   return { results, capped };
 }
 
-// Node-eksport for testene; ignoreres i nettleseren.
+// Node export for the tests; ignored in the browser.
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { CLASSES, CLASS_KEYS, MAX_RESULTS, DISPEL, SPECS, META, DEFAULT_ROSTER, is70, regOf, selOptions, findComps };
 }

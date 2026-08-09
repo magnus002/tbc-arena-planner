@@ -1,40 +1,47 @@
 'use strict';
 /*
- * app.js — UI-tilstand, rendering og hendelser. Domenelogikken bor i engine.js.
+ * app.js — UI state, rendering and events. Domain logic lives in engine.js.
  *
- * To faner: «Lagbygging» (tavla, tilgjengelig-oversikt, gyldige lag, lagrede
- * lag) og «Roster» (redigering + lagrede lag). Alt re-rendres per interaksjon
- * (bevisst enkelt); tekstfelt-verdier bevares over re-render i render().
+ * Four tabs: «Team building» (the board, filters/rules, valid teams with
+ * sorting), «Pugging» (brainstorm: comp strip, checklist, availability
+ * overview, random slots), «Comps» (the META reference: tier lists per
+ * bracket, guidelines, dispel/MS, «Try with the crew» which staffs a comp
+ * from the roster via the engine — gaps/Lock become random slots) and
+ * «Roster» — all sharing the same state. Everything re-renders per
+ * interaction (deliberately simple); text field values are preserved across
+ * re-render in render().
  *
- * Random-plasser: state.randomCount ukjente spillere teller mot lagstørrelsen.
- * Generatoren jobber da med teamSize − randomCount kjente plasser; filtre og
- * regler gjelder de kjente. Lagres/eksporteres som { random: true }-oppføringer.
+ * Random slots: state.randomCount unknown players count against the team
+ * size. The generator then works with teamSize − randomCount known slots;
+ * filters and rules apply to the known ones. Saved/exported as
+ * { random: true } entries.
  *
- * Lagring (PLAN punkt 4): hele state persisteres til localStorage i render()
- * (persist), og gjenopprettes ved oppstart (loadStored) med validering og
- * versjonsfelt. Feiler lagringen (privat modus, sandbox uten localStorage)
- * kjører alt videre i minnet — derfor svelges feilene med vilje.
+ * Storage (PLAN item 4): the whole state is persisted to localStorage in
+ * render() (persist), and restored on startup (loadStored) with validation
+ * and a version field. If storage fails (private mode, sandbox without
+ * localStorage) everything keeps running in memory — hence the errors are
+ * deliberately swallowed.
  */
 
 let state = {
-  tab: 'build',       // 'build' | 'pug' | 'roster'
+  tab: 'build',       // 'build' | 'pug' | 'meta' | 'roster'
   teamSize: 5,
-  sortBy: 'std',      // sortering av gyldige lag: 'std' | 'comp' | 'heal' | 'disp'
-  collapsed: {},      // seksjons-id → true når lukket
+  sortBy: 'std',      // sorting of valid teams: 'std' | 'comp' | 'heal' | 'disp'
+  collapsed: {},      // section id → true when collapsed
   mustHave: new Set(),
-  healerFilter: null, // null = alle, ellers eksakt antall faktiske healers
+  healerFilter: null, // null = all, otherwise the exact number of actual healers
   only70: true,
   caps: { rogue: 1, sham: 1 },
   needDispel: true,
   people: freshRoster(),
   saved: [],          // [{name, size, team: [{name, cls, heal} | {random:true}]}]
-  randomCount: 0,     // antall random-plasser på tavla
-  shown: 25,          // paginering av forslagslista
-  metaOnlyOss: false, // Comps-fanen: vis kun comps gutta kan bemanne
+  randomCount: 0,     // number of random slots on the board
+  shown: 25,          // pagination of the suggestions list
+  metaOnlyOss: false, // Comps tab: show only comps the crew can staff
   showIO: false,
   toast: null,
 };
-state.collapsed.kilder = true; // kilde-lista i Comps-fanen starter lukket
+state.collapsed.kilder = true; // the source list in the Comps tab starts collapsed
 const PAGE = 25;
 
 function freshRoster() {
@@ -42,20 +49,20 @@ function freshRoster() {
     name: p.name,
     classes: [...p.classes],
     benched: false,
-    sel: [],           // valgte classes på tavla — 1+ betyr «alltid med, på en av disse»
-    healerRole: null,  // rollevalg på tavla for ✚⚔: true=healer, false=dps, null=åpen
+    sel: [],           // selected classes on the board — 1+ means "always included, on one of these"
+    healerRole: null,  // role choice on the board for ✚⚔: true=healer, false=dps, null=open
     not70: [],
-    roles: {},         // per-char registrering for hybrid-classes: 'healer' | 'dps' | 'both'
+    roles: {},         // per-character registration for hybrid classes: 'healer' | 'dps' | 'both'
   }));
 }
 
-/* ---------- lagring ---------- */
+/* ---------- storage ---------- */
 
 const STORAGE_KEY = 'tbc-arena-planner';
 const STORAGE_VERSION = 1;
 
-// Rens en liste lagrede lag (fra import ELLER localStorage) til gyldig form.
-// Godtar gammelt format uten random-oppføringer. null = ikke en liste.
+// Clean up a list of saved teams (from import OR localStorage) into valid form.
+// Accepts the old format without random entries. null = not a list.
 function reviveSaved(data) {
   if (!Array.isArray(data)) return null;
   const clean = [];
@@ -68,7 +75,7 @@ function reviveSaved(data) {
         : { name: x.name, cls: x.cls, heal: x.heal === true ? true : x.heal === false ? false : null });
     if (!team.length) continue;
     clean.push({
-      name: typeof s.name === 'string' && s.name.trim() ? s.name.trim() : 'Importert lag',
+      name: typeof s.name === 'string' && s.name.trim() ? s.name.trim() : 'Imported team',
       size: [2, 3, 5].includes(s.size) ? s.size : ([2, 3, 5].includes(team.length) ? team.length : 5),
       team,
     });
@@ -111,7 +118,7 @@ function loadStored() {
   } catch (e) {
     return;
   }
-  if (!d || d.v !== STORAGE_VERSION) return; // ukjent format → start ferskt (migrering hektes på her)
+  if (!d || d.v !== STORAGE_VERSION) return; // unknown format → start fresh (hook migrations in here)
   if ([2, 3, 5].includes(d.teamSize)) state.teamSize = d.teamSize;
   if (['build', 'pug', 'meta', 'roster'].includes(d.tab)) state.tab = d.tab;
   if (['std', 'comp', 'heal', 'disp'].includes(d.sortBy)) state.sortBy = d.sortBy;
@@ -153,7 +160,7 @@ function persist() {
       randomCount: state.randomCount,
       metaOnlyOss: state.metaOnlyOss,
     }));
-  } catch (e) { /* privat modus / sandbox uten localStorage: fortsett uten lagring */ }
+  } catch (e) { /* private mode / sandbox without localStorage: continue without saving */ }
 }
 
 function esc(s) {
@@ -166,7 +173,7 @@ function knownSlots() {
   return state.teamSize - state.randomCount;
 }
 
-/* ---------- tavle-status ---------- */
+/* ---------- board status ---------- */
 
 function capViolations() {
   const count = {};
@@ -181,7 +188,7 @@ function capViolations() {
   return out;
 }
 
-// Er en av classene i clsArr garantert med («ja»), mulig («mulig») eller ikke med («nei»)?
+// Is one of the classes in clsArr guaranteed included ("yes"), possible ("maybe"), or not included ("no")?
 function containsStatus(clsArr) {
   const set = new Set(clsArr);
   let possible = false;
@@ -189,10 +196,10 @@ function containsStatus(clsArr) {
     if (p.benched || !p.sel.length) continue;
     const opts = selOptions(p);
     if (!opts.length) continue;
-    if (opts.every(c => set.has(c))) return 'ja';
+    if (opts.every(c => set.has(c))) return 'yes';
     if (opts.some(c => set.has(c))) possible = true;
   }
-  return possible ? 'mulig' : 'nei';
+  return possible ? 'maybe' : 'no';
 }
 
 function boardInfo() {
@@ -203,17 +210,17 @@ function boardInfo() {
   const slots = knownSlots();
   const info = { chosen, multi, viol, slots, warns: [], complete: false, healTxt: '' };
 
-  if (viol.length) info.warns.push('Regelbrudd: ' + viol.map(v => v.count + '× ' + CLASSES[v.cls].label + ' (maks ' + v.cap + ')').join(', '));
-  if (chosen.length > slots) info.warns.push('For mange valgt – ' + slots + ' plass' + (slots === 1 ? '' : 'er') + ' igjen etter random');
-  if (active.length < slots) info.warns.push('Bare ' + active.length + ' aktive spillere');
+  if (viol.length) info.warns.push('Rule violation: ' + viol.map(v => v.count + '× ' + CLASSES[v.cls].label + ' (max ' + v.cap + ')').join(', '));
+  if (chosen.length > slots) info.warns.push('Too many selected – ' + slots + ' slot' + (slots === 1 ? '' : 's') + ' left after random');
+  if (active.length < slots) info.warns.push('Only ' + active.length + ' active players');
   if (state.only70) {
     const low = chosen.filter(p => p.sel.length === 1 && !is70(p, p.sel[0]));
-    if (low.length) info.warns.push('Ikke 70: ' + low.map(p => esc(p.name)).join(', '));
+    if (low.length) info.warns.push('Not 70: ' + low.map(p => esc(p.name)).join(', '));
   }
   if (!multi.length && !info.warns.length && chosen.length === slots && chosen.length + state.randomCount === state.teamSize) {
     const dispelOk = !state.needDispel || chosen.some(p => DISPEL.includes(p.sel[0]));
     if (!dispelOk) {
-      info.warns.push('Mangler dispeller (Pala/Priest)');
+      info.warns.push('Missing dispeller (Pala/Priest)');
     } else {
       let heal = 0, open = 0;
       for (const p of chosen) {
@@ -223,14 +230,14 @@ function boardInfo() {
       }
       info.complete = true;
       info.healTxt = heal + ' healer' + (heal === 1 ? '' : 's') +
-        (open ? ', ' + open + ' uavklart ✚⚔' : '') +
+        (open ? ', ' + open + ' undecided ✚⚔' : '') +
         (state.randomCount ? ', ' + state.randomCount + ' random' : '');
     }
   }
   return info;
 }
 
-/* ---------- komponenter ---------- */
+/* ---------- components ---------- */
 
 function section(id, title, badge, headExtra, bodyHtml) {
   const open = !state.collapsed[id];
@@ -256,7 +263,7 @@ function chipHtml(p, pi, cls, selected, conflict) {
   if (n70 && !selected && state.only70) style += ';opacity:0.5';
   return '<button class="chip' + (conflict ? ' conflict' : '') + '" style="' + style +
     '" data-act="selchip" data-pi="' + pi + '" data-cls="' + cls + '" aria-pressed="' + selected + '"' +
-    (n70 ? ' title="Ikke level 70"' : '') + '>' + c.label + mark +
+    (n70 ? ' title="Not level 70"' : '') + '>' + c.label + mark +
     (n70 ? '<span class="lvl">&lt;70</span>' : '') + '</button>';
 }
 
@@ -275,7 +282,7 @@ function pairsHtml(team) {
   }).join('');
 }
 
-/* ---------- fane: lagbygging ---------- */
+/* ---------- tab: team building ---------- */
 
 function checklistHtml(info) {
   if (!info.chosen.length && !state.randomCount) return '';
@@ -283,17 +290,17 @@ function checklistHtml(info) {
   const items = [];
 
   const sham = containsStatus(['sham']);
-  items.push(sham === 'ja' ? pill('ok', 'Sham ✓') : sham === 'mulig' ? pill('maybe', 'Sham ?') : pill('', 'Sham –'));
+  items.push(sham === 'yes' ? pill('ok', 'Sham ✓') : sham === 'maybe' ? pill('maybe', 'Sham ?') : pill('', 'Sham –'));
 
   const disp = containsStatus(DISPEL);
-  items.push(disp === 'ja' ? pill('ok', 'Dispeller ✓')
-    : disp === 'mulig' ? pill('maybe', 'Dispeller ?')
+  items.push(disp === 'yes' ? pill('ok', 'Dispeller ✓')
+    : disp === 'maybe' ? pill('maybe', 'Dispeller ?')
     : pill(state.needDispel ? 'bad' : '', 'Dispeller –'));
 
   if (info.viol.length) {
-    items.push(pill('bad', info.viol.map(v => v.count + '× ' + CLASSES[v.cls].label + ' (maks ' + v.cap + ')').join(' · ')));
+    items.push(pill('bad', info.viol.map(v => v.count + '× ' + CLASSES[v.cls].label + ' (max ' + v.cap + ')').join(' · ')));
   } else if (Object.keys(state.caps).length) {
-    items.push(pill('ok', 'Maks-regler ✓'));
+    items.push(pill('ok', 'Cap rules ✓'));
   }
 
   let heal = 0, open = 0;
@@ -308,10 +315,10 @@ function checklistHtml(info) {
   items.push(pill(heal ? 'ok' : '', '✚ ' + heal + (open ? ' (+' + open + '?)' : '')));
 
   if (state.randomCount) {
-    items.push('<button class="ckpill rnd" data-act="rmrandom" title="Ukjent spiller – klikk for å fjerne en plass">Random ×' +
+    items.push('<button class="ckpill rnd" data-act="rmrandom" title="Unknown player – click to remove a slot">Random ×' +
       state.randomCount + ' ✕</button>');
   }
-  return '<div class="flabel" style="margin:12px 0 6px">Compen på tavla</div><div class="checklist" id="checklist">' + items.join('') + '</div>';
+  return '<div class="flabel" style="margin:12px 0 6px">The comp on the board</div><div class="checklist" id="checklist">' + items.join('') + '</div>';
 }
 
 function boardSection() {
@@ -320,7 +327,7 @@ function boardSection() {
   const cards = state.people.map((p, pi) => {
     let chips;
     if (!p.classes.length) {
-      chips = '<span class="noclasses">Ingen classes – legg til under «Roster»</span>';
+      chips = '<span class="noclasses">No classes – add some under «Roster»</span>';
     } else {
       chips = p.classes.map(cls =>
         chipHtml(p, pi, cls, p.sel.includes(cls), p.sel.length === 1 && p.sel[0] === cls && conflicts.has(cls))
@@ -328,17 +335,17 @@ function boardSection() {
     }
     let roleline = '';
     if (!p.benched && p.sel.some(cls => regOf(p, cls) === 'both')) {
-      roleline = '<div class="roleline"><span>Rolle:</span><span class="mini">' +
+      roleline = '<div class="roleline"><span>Role:</span><span class="mini">' +
         '<button class="' + (p.healerRole === true ? 'on' : '') + '" data-act="pickrole" data-pi="' + pi + '" data-val="heal">✚ Healer</button>' +
-        '<button class="' + (p.healerRole === null ? 'on' : '') + '" data-act="pickrole" data-pi="' + pi + '" data-val="open">Åpen</button>' +
+        '<button class="' + (p.healerRole === null ? 'on' : '') + '" data-act="pickrole" data-pi="' + pi + '" data-val="open">Open</button>' +
         '<button class="' + (p.healerRole === false ? 'on' : '') + '" data-act="pickrole" data-pi="' + pi + '" data-val="dps">⚔ DPS</button>' +
         '</span></div>';
     }
     const multihint = (!p.benched && p.sel.length > 1)
-      ? '<div class="multihint">' + p.sel.length + ' classes valgt – forslagene prøver alle</div>' : '';
+      ? '<div class="multihint">' + p.sel.length + ' classes selected – suggestions try them all</div>' : '';
     return '<div class="card' + (p.benched ? ' benched' : '') + '">' +
       '<div class="cardhead"><span class="pname">' + esc(p.name) + '</span>' +
-      '<button class="pill' + (p.benched ? ' on' : '') + '" data-act="bench" data-pi="' + pi + '" aria-pressed="' + p.benched + '">Benk</button></div>' +
+      '<button class="pill' + (p.benched ? ' on' : '') + '" data-act="bench" data-pi="' + pi + '" aria-pressed="' + p.benched + '">Bench</button></div>' +
       '<div class="chips">' + chips + '</div>' + roleline + multihint + '</div>';
   }).join('');
 
@@ -346,9 +353,9 @@ function boardSection() {
   const badge = '<span class="count' + (info.complete ? ' ok' : info.warns.length ? ' warn' : '') + '">' +
     filled + '/' + state.teamSize + '</span>';
   const clearBtn = (info.chosen.length || state.randomCount)
-    ? '<button class="btn small ghost" data-act="clear">Nullstill valg</button>' : '';
-  const help = '<div class="legend">Klikk en class for å sette hvem som spiller hva – velg gjerne flere per person, så prøver forslagene alle. ✚ healer · ⚔ dps · ✚⚔ kan begge.</div>';
-  return section('board', 'Tavla', badge, clearBtn, '<div class="cards">' + cards + '</div>' + checklistHtml(info) + help);
+    ? '<button class="btn small ghost" data-act="clear">Clear selection</button>' : '';
+  const help = '<div class="legend">Click a class to set who plays what – feel free to pick several per person, the suggestions will try them all. ✚ healer · ⚔ dps · ✚⚔ can do both.</div>';
+  return section('board', 'Board', badge, clearBtn, '<div class="cards">' + cards + '</div>' + checklistHtml(info) + help);
 }
 
 function availSection() {
@@ -357,21 +364,21 @@ function availSection() {
     const plays = state.people.map((p, pi) => ({ p, pi })).filter(x => x.p.classes.includes(cls));
     let entries;
     if (!plays.length) {
-      entries = '<span class="dim" style="font-style:italic;font-size:12px">ingen</span>';
+      entries = '<span class="dim" style="font-style:italic;font-size:12px">none</span>';
     } else {
       entries = plays.map(({ p, pi }) => {
         const reg = regOf(p, cls);
         const mark = reg === 'healer' ? ' ✚' : reg === 'both' ? ' ✚⚔' : c.healer ? ' ⚔' : '';
         const n70 = !is70(p, cls);
         if (p.benched) {
-          return '<span class="avbtn benched" title="Benket – aktiver under Benk-knappen på kortet">' + esc(p.name) + mark + '</span>';
+          return '<span class="avbtn benched" title="Benched – enable via the Bench button on the card">' + esc(p.name) + mark + '</span>';
         }
         const on = p.sel.includes(cls);
         const style = on
           ? 'background:' + c.color + ';border-color:' + c.color + ';color:var(--ink)'
           : 'border-color:' + c.color + ';color:' + c.color + (n70 && state.only70 ? ';opacity:0.5' : '');
         return '<button class="avbtn" style="' + style + '" data-act="selchip" data-pi="' + pi + '" data-cls="' + cls +
-          '" aria-pressed="' + on + '"' + (n70 ? ' title="Ikke level 70"' : '') + '>' + esc(p.name) + mark +
+          '" aria-pressed="' + on + '"' + (n70 ? ' title="Not level 70"' : '') + '>' + esc(p.name) + mark +
           (n70 ? '<span class="lvl">&lt;70</span>' : '') + '</button>';
       }).join('');
     }
@@ -380,21 +387,21 @@ function availSection() {
   }).join('');
 
   const randomRow = '<div class="avrow"><span class="avcls dim">Random</span><span class="aventries">' +
-    '<button class="avbtn rnd" data-act="addrandom"' + (state.randomCount >= state.teamSize ? ' disabled' : '') + '>+ Legg til plass</button>' +
+    '<button class="avbtn rnd" data-act="addrandom"' + (state.randomCount >= state.teamSize ? ' disabled' : '') + '>+ Add slot</button>' +
     (state.randomCount ? '<button class="avbtn rnd" data-act="rmrandom">Random ×' + state.randomCount + ' ✕</button>' : '') +
-    '<span class="dim" style="font-size:11.5px">i tilfelle dere ikke er nok folk – teller som ukjent spiller</span>' +
+    '<span class="dim" style="font-size:11.5px">in case you do not have enough people – counts as an unknown player</span>' +
     '</span></div>';
 
-  const help = '<div class="legend">Klikk et navn for å sette personen på tavla med den classen – samme som å klikke chipen på kortet.</div>';
-  return section('avail', 'Tilgjengelig per class', '', '', rows + randomRow + help);
+  const help = '<div class="legend">Click a name to put that person on the board with that class – same as clicking the chip on the card.</div>';
+  return section('avail', 'Available per class', '', '', rows + randomRow + help);
 }
 
 let listCache = [];
 
 /*
- * Felles port for forslagsberegningen: enten { results, capped } eller
- * { msg, warn?, zero? } når tavla/oppsettet gjør lista meningsløs.
- * Brukes av både «Gyldige lag» (Lagbygging) og telleren i Pugging-fanen.
+ * Shared entry point for computing suggestions: either { results, capped } or
+ * { msg, warn?, zero? } when the board/setup makes the list meaningless.
+ * Used by both «Valid teams» (Team building) and the counter in the Pugging tab.
  */
 function computeComps() {
   const active = state.people.filter(p => !p.benched);
@@ -403,18 +410,18 @@ function computeComps() {
   const deadLock = active.find(p => p.sel.length && selOptions(p).length === 0);
   if (slots <= 0) {
     return { msg: state.randomCount >= state.teamSize
-      ? 'Alle plassene er random – fjern en plass for å få forslag med gutta.'
-      : 'Ingen plasser igjen.' };
+      ? 'All the slots are random – remove a slot to get suggestions with the crew.'
+      : 'No slots left.' };
   }
-  if (capViolations().length) return { msg: 'Tavla bryter en maks-regel – fjern et valg eller hev taket under «Filtre og regler».', warn: true };
-  if (deadLock) return { msg: esc(deadLock.name) + ' sitt rollevalg utelukker alle valgte classes – endre rolle eller class-valg.', warn: true, zero: true };
-  if (locked.length > slots) return { msg: 'Flere valgt (' + locked.length + ') enn plasser (' + slots + ') – fjern et valg eller en random-plass.', warn: true };
+  if (capViolations().length) return { msg: 'The board breaks a cap rule – remove a selection or raise the cap under «Filters and rules».', warn: true };
+  if (deadLock) return { msg: 'The role choice for ' + esc(deadLock.name) + ' excludes all selected classes – change the role or class selection.', warn: true, zero: true };
+  if (locked.length > slots) return { msg: 'More selected (' + locked.length + ') than slots (' + slots + ') – remove a selection or a random slot.', warn: true };
   if (state.only70 && active.some(p => p.sel.length === 1 && !is70(p, p.sel[0]))) {
-    return { msg: 'Noen på tavla spiller en char som ikke er 70 – fjern valget eller skru av «Kun 70».', warn: true };
+    return { msg: 'Someone on the board is playing a character that is not level 70 – remove the selection or turn off «Level 70 only».', warn: true };
   }
   if (active.length < slots) {
-    return { msg: 'For få aktive spillere for ' + state.teamSize + 'v' + state.teamSize +
-      (state.randomCount ? '' : ' – eller legg til random-plasser under «Pugging»') + '.', warn: true };
+    return { msg: 'Not enough active players for ' + state.teamSize + 'v' + state.teamSize +
+      (state.randomCount ? '' : ' – or add random slots under «Pugging»') + '.', warn: true };
   }
   const { results, capped } = findComps(state.people, {
     teamSize: slots,
@@ -435,7 +442,7 @@ function rowHeal(team) {
 
 function sortedResults(results) {
   if (state.sortBy === 'std') return results;
-  const r = results.slice(); // Array.sort er stabil — lik nøkkel beholder generert rekkefølge
+  const r = results.slice(); // Array.sort is stable — equal keys keep the generated order
   if (state.sortBy === 'comp') {
     const sig = t => t.map(x => CLASSES[x.cls].label).sort().join(' · ');
     r.sort((a, b) => sig(a) < sig(b) ? -1 : sig(a) > sig(b) ? 1 : 0);
@@ -449,18 +456,18 @@ function sortedResults(results) {
 }
 
 function filtersSection() {
-  // kort oppsummering av aktive innsnevringer, synlig også når seksjonen er lukket
+  // short summary of active constraints, visible even when the section is collapsed
   const sum = [];
-  if (state.mustHave.size) sum.push('må ha: ' + [...state.mustHave].map(c => CLASSES[c].label).join(', '));
+  if (state.mustHave.size) sum.push('must have: ' + [...state.mustHave].map(c => CLASSES[c].label).join(', '));
   if (state.healerFilter !== null) sum.push(state.healerFilter + ' ✚');
   for (const cls of CLASS_KEYS) if (state.caps[cls] !== undefined) sum.push(CLASSES[cls].label + ' ×' + state.caps[cls]);
-  if (state.needDispel) sum.push('dispel-krav');
-  if (state.only70) sum.push('kun 70');
+  if (state.needDispel) sum.push('dispel required');
+  if (state.only70) sum.push('level 70 only');
   const headsum = sum.length ? '<span class="headsum">' + sum.join(' · ') + '</span>' : '';
 
   const body =
-    '<div class="fgrid"><div class="fbox"><div class="flabel">Filtre</div>' +
-    '<div class="frow"><span class="lbl">Må inneholde:</span>' + CLASS_KEYS.map(cls => {
+    '<div class="fgrid"><div class="fbox"><div class="flabel">Filters</div>' +
+    '<div class="frow"><span class="lbl">Must include:</span>' + CLASS_KEYS.map(cls => {
       const on = state.mustHave.has(cls);
       const c = CLASSES[cls];
       const style = on
@@ -469,40 +476,40 @@ function filtersSection() {
       return '<button class="chip" style="' + style + '" data-act="must" data-cls="' + cls + '" aria-pressed="' + on + '">' + c.label + '</button>';
     }).join('') + '</div>' +
     '<div class="frow"><span class="lbl">Healers:</span><span class="seg">' +
-    [[null, 'Alle'], [1, '1 ✚'], [2, '2 ✚'], [3, '3 ✚']].map(([v, lbl]) =>
+    [[null, 'All'], [1, '1 ✚'], [2, '2 ✚'], [3, '3 ✚']].map(([v, lbl]) =>
       '<button class="' + (state.healerFilter === v ? 'on' : '') + '" data-act="healfilter" data-val="' + (v === null ? 'all' : v) + '">' + lbl + '</button>'
     ).join('') + '</span>' +
-    '<label class="check"><input type="checkbox" data-act="only70"' + (state.only70 ? ' checked' : '') + '> Kun 70</label></div>' +
-    '</div><div class="fbox"><div class="flabel">Regler</div>' +
-    '<div class="frow"><span class="lbl">Maks per class:</span>' + CLASS_KEYS.map(cls => {
+    '<label class="check"><input type="checkbox" data-act="only70"' + (state.only70 ? ' checked' : '') + '> Level 70 only</label></div>' +
+    '</div><div class="fbox"><div class="flabel">Rules</div>' +
+    '<div class="frow"><span class="lbl">Max per class:</span>' + CLASS_KEYS.map(cls => {
       const c = CLASSES[cls];
       const cap = state.caps[cls] === undefined ? Infinity : state.caps[cls];
       const capped = cap !== Infinity;
       const style = 'border-color:' + c.color + ';color:' + c.color + (capped ? '' : ';opacity:0.4');
       return '<button class="chip" style="' + style + '" data-act="cap" data-cls="' + cls +
-        '" title="Klikk for å endre: ∞ → 1 → 2 → 3 → ∞">' + c.label + ' <span class="mark">' + (capped ? '×' + cap : '∞') + '</span></button>';
+        '" title="Click to change: ∞ → 1 → 2 → 3 → ∞">' + c.label + ' <span class="mark">' + (capped ? '×' + cap : '∞') + '</span></button>';
     }).join('') + '</div>' +
-    '<div class="frow"><label class="check"><input type="checkbox" data-act="dispel"' + (state.needDispel ? ' checked' : '') + '> Minst 1 dispeller (Pala/Priest)</label></div>' +
+    '<div class="frow"><label class="check"><input type="checkbox" data-act="dispel"' + (state.needDispel ? ' checked' : '') + '> At least 1 dispeller (Pala/Priest)</label></div>' +
     '</div></div>';
-  return section('filters', 'Filtre og regler', '', headsum, body);
+  return section('filters', 'Filters and rules', '', headsum, body);
 }
 
 function compsSection() {
   const active = state.people.filter(p => !p.benched);
 
-  // gull-linja: alt som snevrer inn forslagene
+  // gold line: everything that narrows down the suggestions
   const segs = [];
   const locked = active.filter(p => p.sel.length);
-  if (locked.length) segs.push('På tavla: ' + locked.map(p => {
+  if (locked.length) segs.push('On the board: ' + locked.map(p => {
     const opts = selOptions(p);
     return esc(p.name) + ' (' + (opts.length ? opts.map(c => CLASSES[c].label).join(' / ') : '–') + ')';
   }).join(', '));
-  if (state.randomCount) segs.push('Random-plasser: ' + state.randomCount);
+  if (state.randomCount) segs.push('Random slots: ' + state.randomCount);
   const benched = state.people.filter(p => p.benched);
-  if (benched.length) segs.push('Benket: ' + benched.map(p => esc(p.name)).join(', '));
+  if (benched.length) segs.push('Benched: ' + benched.map(p => esc(p.name)).join(', '));
   if (state.only70) {
     const no70 = active.filter(p => !p.sel.length && p.classes.length && p.classes.every(cls => !is70(p, cls)));
-    if (no70.length) segs.push('Ingen 70-char: ' + no70.map(p => esc(p.name)).join(', '));
+    if (no70.length) segs.push('No level-70 character: ' + no70.map(p => esc(p.name)).join(', '));
   }
   const lockline = segs.length ? '<p class="lockline">' + segs.join(' &nbsp;·&nbsp; ') + '</p>' : '';
 
@@ -514,11 +521,11 @@ function compsSection() {
     list = '<div class="empty">' + cc.msg + '</div>';
   } else if (!cc.results.length) {
     badge = '<span class="count warn">0</span>';
-    list = '<div class="empty">Ingen gyldige lag med disse begrensningene – løsne et filter eller en regel under «Filtre og regler».</div>';
+    list = '<div class="empty">No valid teams with these constraints – loosen a filter or a rule under «Filters and rules».</div>';
   } else {
     badge = '<span class="count">' + cc.results.length + (cc.capped ? '+' : '') + '</span>';
-    const sortRow = '<div class="frow" style="margin-bottom:10px"><span class="lbl">Sorter:</span><span class="seg">' +
-      [['std', 'Som generert'], ['comp', 'Like comps samlet'], ['heal', 'Flest healers'], ['disp', 'Flest dispellere']].map(([v, lbl]) =>
+    const sortRow = '<div class="frow" style="margin-bottom:10px"><span class="lbl">Sort:</span><span class="seg">' +
+      [['std', 'As generated'], ['comp', 'Identical comps grouped'], ['heal', 'Most healers'], ['disp', 'Most dispellers']].map(([v, lbl]) =>
         '<button class="' + (state.sortBy === v ? 'on' : '') + '" data-act="sortby" data-val="' + v + '">' + lbl + '</button>'
       ).join('') + '</span></div>';
     const sorted = sortedResults(cc.results);
@@ -527,23 +534,23 @@ function compsSection() {
       const inTeam = new Set(team.map(t => t.name));
       const outside = active.filter(p => !inTeam.has(p.name)).map(p => p.name);
       return '<div class="comp"><span class="pairs">' + pairsHtml(team) + randomPairs +
-        '<span class="healbadge" title="' + (state.healerFilter !== null ? 'Antall som spiller healer' : 'Antall som kan heale') + '">✚' + rowHeal(team) + '</span>' +
-        (outside.length ? '<span class="meta">står over: ' + outside.map(esc).join(', ') + '</span>' : '') +
-        '</span><span class="rowbtns"><button class="btn small ghost" data-act="savecomp" data-ti="' + ti + '">Lagre</button>' +
-        '<button class="btn small" data-act="use" data-ti="' + ti + '">Bruk på tavla</button></span></div>';
+        '<span class="healbadge" title="' + (state.healerFilter !== null ? 'Number playing healer' : 'Number who can heal') + '">✚' + rowHeal(team) + '</span>' +
+        (outside.length ? '<span class="meta">sitting out: ' + outside.map(esc).join(', ') + '</span>' : '') +
+        '</span><span class="rowbtns"><button class="btn small ghost" data-act="savecomp" data-ti="' + ti + '">Save</button>' +
+        '<button class="btn small" data-act="use" data-ti="' + ti + '">Use on board</button></span></div>';
     }).join('');
     if (sorted.length > state.shown) {
-      list += '<div class="morewrap"><button class="btn ghost" data-act="more">Vis ' +
-        Math.min(PAGE, sorted.length - state.shown) + ' til <span class="dim">(' +
-        (sorted.length - state.shown) + ' igjen)</span></button></div>';
+      list += '<div class="morewrap"><button class="btn ghost" data-act="more">Show ' +
+        Math.min(PAGE, sorted.length - state.shown) + ' more <span class="dim">(' +
+        (sorted.length - state.shown) + ' left)</span></button></div>';
     }
-    list += '<div class="legend">Fylt chip = spiller healer i det laget · «står over» = ikke med i akkurat dette laget.</div>';
+    list += '<div class="legend">Filled chip = plays healer in that team · «sitting out» = not included in this particular team.</div>';
     listCache = sorted;
   }
-  return section('comps', 'Gyldige lag', badge, '', lockline + list);
+  return section('comps', 'Valid teams', badge, '', lockline + list);
 }
 
-/* ---------- fane: pugging (brainstorm comps med roster + randoms) ---------- */
+/* ---------- tab: pugging (brainstorm comps with the roster + randoms) ---------- */
 
 function pugSection() {
   const info = boardInfo();
@@ -561,23 +568,23 @@ function pugSection() {
     }
   }
   for (let i = 0; i < state.randomCount; i++) chips.push('<span class="pair rnd">Random</span>');
-  for (let i = chips.length; i < state.teamSize; i++) chips.push('<span class="pair slot">ledig</span>');
+  for (let i = chips.length; i < state.teamSize; i++) chips.push('<span class="pair slot">open</span>');
   const strip = '<div class="pairs">' + chips.join('') + '</div>';
 
   const cc = computeComps();
   const validline = '<div class="legend">' + (cc.msg
     ? cc.msg
-    : cc.results.length + (cc.capped ? '+' : '') + ' gyldige lag med dette utgangspunktet – lista ligger under «Lagbygging».') + '</div>';
+    : cc.results.length + (cc.capped ? '+' : '') + ' valid teams with this starting point – the list is under «Team building».') + '</div>';
 
   const filled = info.chosen.length + state.randomCount;
   const badge = '<span class="count' + (info.complete ? ' ok' : info.warns.length ? ' warn' : '') + '">' +
     filled + '/' + state.teamSize + '</span>';
   const clearBtn = (info.chosen.length || state.randomCount)
-    ? '<button class="btn small ghost" data-act="clear">Nullstill valg</button>' : '';
-  return section('pug', 'Compen', badge, clearBtn, strip + checklistHtml(info) + validline);
+    ? '<button class="btn small ghost" data-act="clear">Clear selection</button>' : '';
+  return section('pug', 'The comp', badge, clearBtn, strip + checklistHtml(info) + validline);
 }
 
-/* ---------- fane: comps (research-referanse fra META i engine.js) ---------- */
+/* ---------- tab: comps (research reference from META in engine.js) ---------- */
 
 function clsInfo(c) {
   return CLASSES[c] || META.extraClasses[c] || { label: c, color: 'var(--dim)', healer: false };
@@ -589,10 +596,10 @@ function metaSpecRole(cls, key) {
 }
 
 /*
- * Kan gutta bemanne compen? Classes utenfor CLASSES (lock) løses som
- * random-plasser, og inntil 2 plasser totalt kan stå udekket (PUG).
- * Returnerer { team, randoms } eller null. Bruker motoren med eksakte
- * class-tak og filtrerer på signatur — respekterer benk og «Kun 70».
+ * Can the crew staff the comp? Classes outside CLASSES (lock) are resolved as
+ * random slots, and up to 2 slots total may go uncovered (PUG).
+ * Returns { team, randoms } or null. Uses the engine with exact class
+ * caps and filters by signature — respects bench and «Level 70 only».
  */
 function findStaffing(comp) {
   const known = comp.classes.filter(c => CLASSES[c]);
@@ -610,7 +617,7 @@ function findStaffing(comp) {
   };
   const maxDrop = Math.max(0, 2 - lockN);
   for (let drop = 0; drop <= maxDrop; drop++) {
-    if (lockN + drop >= comp.classes.length) break; // minst én av gutta må være med
+    if (lockN + drop >= comp.classes.length) break; // at least one of the crew must be included
     if (drop === 0) {
       const team = tryExact(known);
       if (team) return { team, randoms: lockN };
@@ -651,23 +658,23 @@ function metaView() {
       }).join('');
       const feas = st
         ? (st.randoms
-          ? '<span class="ckpill maybe">✓ m/ ' + st.randoms + ' random</span>'
-          : '<span class="ckpill ok">✓ gutta kan</span>')
-        : '<span class="ckpill">mangler folk</span>';
+          ? '<span class="ckpill maybe">✓ w/ ' + st.randoms + ' random</span>'
+          : '<span class="ckpill ok">✓ crew can</span>')
+        : '<span class="ckpill">missing people</span>';
       rows.push('<div class="comp"><span class="pairs">' +
         '<span class="tier ' + comp.tier + '">' + comp.tier + '</span>' +
         '<span class="metaname">' + esc(comp.name) + '</span>' + chips +
-        '<span class="healbadge" title="Antall healer-specs">✚' + comp.healers + '</span>' + feas +
+        '<span class="healbadge" title="Number of healer specs">✚' + comp.healers + '</span>' + feas +
         '</span><span class="rowbtns"><button class="btn small" data-act="trycomp" data-mi="' + mi + '"' +
-        (st ? '' : ' disabled title="Ingen av gutta kan bemanne denne nå (benk/70 tatt i betraktning)"') +
-        '>Prøv med gutta</button></span>' +
+        (st ? '' : ' disabled title="None of the crew can staff this right now (bench/70 taken into account)"') +
+        '>Try with the crew</button></span>' +
         '<div class="metasub">' + comp.specs.join(' · ') + ' — ' + esc(comp.why) + '</div></div>');
     });
-  const ossBtn = '<button class="pill' + (state.metaOnlyOss ? ' on' : '') + '" data-act="metaoss" aria-pressed="' + state.metaOnlyOss + '">Kun gutta</button>';
+  const ossBtn = '<button class="pill' + (state.metaOnlyOss ? ' on' : '') + '" data-act="metaoss" aria-pressed="' + state.metaOnlyOss + '">Crew only</button>';
   const listBody = rows.join('') ||
-    '<div class="empty">Ingen comps å vise' + (state.metaOnlyOss ? ' – skru av «Kun gutta»-filteret' : '') + '.</div>';
-  const legend = '<div class="legend">Research juli 2026, TBC 2.4.3 / TBC Classic. Fylt chip = healer-spec. «Prøv med gutta» setter compen på tavla — Lock-plasser og udekkede plasser blir random-plasser.</div>';
-  const compsSec = section('meta', 'Anbefalte comps · ' + state.teamSize + 'v' + state.teamSize,
+    '<div class="empty">No comps to show' + (state.metaOnlyOss ? ' – turn off the «Crew only» filter' : '') + '.</div>';
+  const legend = '<div class="legend">Research from July 2026, TBC 2.4.3 / TBC Classic. Filled chip = healer spec. «Try with the crew» sets the comp on the board — Lock slots and uncovered slots become random slots.</div>';
+  const compsSec = section('meta', 'Recommended comps · ' + state.teamSize + 'v' + state.teamSize,
     '<span class="count">' + shown + '</span>', ossBtn, listBody + legend);
 
   const ruleRows = META.rules.map(r =>
@@ -677,8 +684,8 @@ function metaView() {
     '<span style="font-weight:600">' + esc(r.rule) + '</span>' +
     '</span><div class="metasub">' + esc(r.why) + '</div></div>'
   ).join('');
-  const ruleLegend = '<div class="legend">Referanse — føringene er ikke koblet til reglene/sjekklista ennå. Si ifra hvilke som skal håndheves, så kodes de inn.</div>';
-  const rulesSec = section('metarules', 'Føringer fra researchen',
+  const ruleLegend = '<div class="legend">Reference — the guidelines are not wired into the rules/checklist yet. Let us know which ones should be enforced, and they will get coded in.</div>';
+  const rulesSec = section('metarules', 'Guidelines from the research',
     '<span class="count">' + META.rules.length + '</span>', '', ruleRows + ruleLegend);
 
   const effRows = CLASS_KEYS.concat(['lock']).map(c => {
@@ -688,18 +695,18 @@ function metaView() {
     const info = clsInfo(c);
     return '<div class="avrow"><span class="avcls" style="color:' + info.color + '">' + info.label + '</span>' +
       '<span class="aventries">' +
-      (def.length ? def.map(t => '<span class="ckpill">' + t + '</span>').join('') : '<span class="dim" style="font-size:12px">ingen defensiv</span>') +
+      (def.length ? def.map(t => '<span class="ckpill">' + t + '</span>').join('') : '<span class="dim" style="font-size:12px">no defensive</span>') +
       (off ? '<span class="ckpill ok">purge ✓</span>' : '') +
       '</span></div>';
   }).join('');
-  const msRow = '<div class="avrow"><span class="avcls" style="color:var(--gold)">MS-effekt</span><span class="aventries">' +
+  const msRow = '<div class="avrow"><span class="avcls" style="color:var(--gold)">MS effect</span><span class="aventries">' +
     META.ms.classes.map(c => '<span class="ckpill">' + clsInfo(c).label + '</span>').join('') + '</span></div>';
   const effSec = section('metaeff', 'Dispel & MS', '', '',
     effRows + msRow +
     '<div class="legend">' + esc(META.dispel.note) + '</div>' +
     '<div class="legend">' + esc(META.ms.note) + '</div>');
 
-  const srcSec = section('kilder', 'Kilder', '<span class="count">' + META.sources.length + '</span>', '',
+  const srcSec = section('kilder', 'Sources', '<span class="count">' + META.sources.length + '</span>', '',
     '<div class="srclist">' + META.sources.map(s =>
       '<a href="' + esc(s.url) + '" target="_blank" rel="noopener">' + esc(s.title) + '</a>').join('') + '</div>');
 
@@ -709,48 +716,48 @@ function metaView() {
 function savedSection() {
   let body;
   if (!state.saved.length) {
-    body = '<div class="empty">Ingen lagrede lag ennå – sett opp et fullt lag på tavla, eller trykk «Lagre» på et forslag.</div>';
+    body = '<div class="empty">No saved teams yet – set up a full team on the board, or click «Save» on a suggestion.</div>';
   } else {
     body = state.saved.map((s, si) =>
       '<div class="comp"><span class="pairs"><span class="savedname">' + esc(s.name) + '</span>' +
       '<span class="sizebadge">' + s.size + 'v' + s.size + '</span>' + pairsHtml(s.team) +
-      '</span><span class="rowbtns"><button class="btn small" data-act="usesaved" data-si="' + si + '">Bruk på tavla</button>' +
-      '<button class="btn small ghost danger" data-act="delsaved" data-si="' + si + '">Slett</button></span></div>'
+      '</span><span class="rowbtns"><button class="btn small" data-act="usesaved" data-si="' + si + '">Use on board</button>' +
+      '<button class="btn small ghost danger" data-act="delsaved" data-si="' + si + '">Delete</button></span></div>'
     ).join('');
   }
   let io = '';
   if (state.showIO) {
     io = '<div class="iopanel"><textarea id="ioText" spellcheck="false"></textarea>' +
       '<div style="margin-top:8px;display:flex;gap:8px;align-items:center">' +
-      '<button class="btn small" data-act="import">Importer fra teksten</button>' +
+      '<button class="btn small" data-act="import">Import from the text</button>' +
       '<span class="iomsg" id="iomsg"></span></div></div>';
   }
   const badge = '<span class="count">' + state.saved.length + '</span>';
-  const ioBtn = '<button class="btn small ghost" data-act="toggleio">Eksporter / importer</button>';
-  return section('saved', 'Lagrede lag', badge, ioBtn, body + io);
+  const ioBtn = '<button class="btn small ghost" data-act="toggleio">Export / import</button>';
+  return section('saved', 'Saved teams', badge, ioBtn, body + io);
 }
 
 function savebarHtml() {
   const info = boardInfo();
   if (state.tab === 'roster' || (!info.chosen.length && !state.randomCount)) return '';
   const filled = info.chosen.length + state.randomCount;
-  let stat = '<span class="' + (info.complete ? 'ok' : '') + '">' + filled + '/' + state.teamSize + ' valgt</span>';
+  let stat = '<span class="' + (info.complete ? 'ok' : '') + '">' + filled + '/' + state.teamSize + ' selected</span>';
   if (info.multi.length) {
-    stat += ' <span class="dim">· ' + info.multi.map(p => esc(p.name)).join(' og ') + ' har flere classes valgt</span>';
+    stat += ' <span class="dim">· ' + info.multi.map(p => esc(p.name)).join(' and ') + ' have multiple classes selected</span>';
   }
   if (info.warns.length) stat += ' <span class="warn">· ' + info.warns[0] + '</span>';
-  else if (info.complete) stat += ' <span class="dim">· gyldig lag (' + info.healTxt + ') ✓</span>';
+  else if (info.complete) stat += ' <span class="dim">· valid team (' + info.healTxt + ') ✓</span>';
   const canSave = info.complete;
-  const saveTitle = canSave ? 'Lagrer laget slik det står på tavla'
-    : info.multi.length ? 'Velg én class per person for å lagre' : 'Krever fullt lag uten regelbrudd';
+  const saveTitle = canSave ? 'Saves the team as it stands on the board'
+    : info.multi.length ? 'Pick one class per person to save' : 'Requires a full team with no rule violations';
   return '<div class="savebar" id="savebar"><div class="savebar-inner">' +
     '<span class="stat">' + stat + '</span><span class="grow"></span>' +
-    '<input type="text" id="saveName" placeholder="Navn på laget …">' +
-    '<button class="btn primary" data-act="saveboard"' + (canSave ? '' : ' disabled') + ' title="' + saveTitle + '">Lagre laget</button>' +
+    '<input type="text" id="saveName" placeholder="Team name …">' +
+    '<button class="btn primary" data-act="saveboard"' + (canSave ? '' : ' disabled') + ' title="' + saveTitle + '">Save team</button>' +
     '</div></div>';
 }
 
-/* ---------- fane: roster ---------- */
+/* ---------- tab: roster ---------- */
 
 function rosterSection() {
   const cards = state.people.map((p, pi) => {
@@ -760,21 +767,21 @@ function rosterSection() {
       const n70 = !is70(p, cls);
       const role = c.healer
         ? '<span class="mini">' +
-          '<button class="' + (reg === 'healer' ? 'on' : '') + '" data-act="setreg" data-pi="' + pi + '" data-cls="' + cls + '" data-val="healer" title="Kun healer">✚</button>' +
-          '<button class="' + (reg === 'both' ? 'on' : '') + '" data-act="setreg" data-pi="' + pi + '" data-cls="' + cls + '" data-val="both" title="Kan begge">✚⚔</button>' +
-          '<button class="' + (reg === 'dps' ? 'on' : '') + '" data-act="setreg" data-pi="' + pi + '" data-cls="' + cls + '" data-val="dps" title="Kun dps">⚔</button>' +
+          '<button class="' + (reg === 'healer' ? 'on' : '') + '" data-act="setreg" data-pi="' + pi + '" data-cls="' + cls + '" data-val="healer" title="Healer only">✚</button>' +
+          '<button class="' + (reg === 'both' ? 'on' : '') + '" data-act="setreg" data-pi="' + pi + '" data-cls="' + cls + '" data-val="both" title="Can do both">✚⚔</button>' +
+          '<button class="' + (reg === 'dps' ? 'on' : '') + '" data-act="setreg" data-pi="' + pi + '" data-cls="' + cls + '" data-val="dps" title="DPS only">⚔</button>' +
           '</span>'
         : '<span class="dim" style="font-size:11px">⚔ dps</span>';
       return '<div class="clsrow">' +
         '<span class="chip" style="border-color:' + c.color + ';color:' + c.color + '">' + c.label + '</span>' +
         role +
-        '<button class="lvlpill' + (n70 ? ' n70' : '') + '" data-act="lvl" data-pi="' + pi + '" data-cls="' + cls + '" title="Klikk for å bytte 70-status">' + (n70 ? '&lt;70' : '70') + '</button>' +
-        '<button class="clsrm" data-act="rmcls" data-pi="' + pi + '" data-cls="' + cls + '" title="Fjern ' + c.label + ' fra ' + esc(p.name) + '">✕</button>' +
+        '<button class="lvlpill' + (n70 ? ' n70' : '') + '" data-act="lvl" data-pi="' + pi + '" data-cls="' + cls + '" title="Click to toggle 70 status">' + (n70 ? '&lt;70' : '70') + '</button>' +
+        '<button class="clsrm" data-act="rmcls" data-pi="' + pi + '" data-cls="' + cls + '" title="Remove ' + c.label + ' from ' + esc(p.name) + '">✕</button>' +
         '</div>';
     }).join('');
     const missing = CLASS_KEYS.filter(cls => !p.classes.includes(cls));
     const addRow = missing.length
-      ? '<div class="addcls"><div class="flabel">Legg til class</div><div class="chips">' +
+      ? '<div class="addcls"><div class="flabel">Add class</div><div class="chips">' +
         missing.map(cls => {
           const c = CLASSES[cls];
           return '<button class="chip off" style="border-color:' + c.color + ';color:' + c.color +
@@ -783,17 +790,17 @@ function rosterSection() {
       : '';
     return '<div class="card' + (p.benched ? ' benched' : '') + '">' +
       '<div class="cardhead"><span class="pname">' + esc(p.name) + '</span>' +
-      '<button class="pill' + (p.benched ? ' on' : '') + '" data-act="bench" data-pi="' + pi + '" aria-pressed="' + p.benched + '">Benk</button>' +
-      '<button class="clsrm" data-act="rmperson" data-pi="' + pi + '" title="Fjern ' + esc(p.name) + ' fra rosteren">✕</button></div>' +
-      (rows || '<div class="noclasses">Ingen classes ennå</div>') + addRow + '</div>';
+      '<button class="pill' + (p.benched ? ' on' : '') + '" data-act="bench" data-pi="' + pi + '" aria-pressed="' + p.benched + '">Bench</button>' +
+      '<button class="clsrm" data-act="rmperson" data-pi="' + pi + '" title="Remove ' + esc(p.name) + ' from the roster">✕</button></div>' +
+      (rows || '<div class="noclasses">No classes yet</div>') + addRow + '</div>';
   }).join('');
 
-  const add = '<div class="addrow"><input type="text" id="newName" placeholder="Nytt navn …">' +
-    '<button class="btn" data-act="addperson">Legg til person</button></div>';
-  const danger = '<div class="dangerzone"><button class="btn ghost danger" data-act="resetroster">Tilbakestill roster</button>' +
-    '<span class="hint">Setter alle personer, classes, roller og 70-status tilbake til standard.</span></div>';
+  const add = '<div class="addrow"><input type="text" id="newName" placeholder="New name …">' +
+    '<button class="btn" data-act="addperson">Add person</button></div>';
+  const danger = '<div class="dangerzone"><button class="btn ghost danger" data-act="resetroster">Reset roster</button>' +
+    '<span class="hint">Resets all people, classes, roles, and 70 status back to default.</span></div>';
   const badge = '<span class="count">' + state.people.length + '</span>';
-  return section('roster', 'Spillere', badge, '', '<div class="rcards">' + cards + '</div>' + add + danger);
+  return section('roster', 'Players', badge, '', '<div class="rcards">' + cards + '</div>' + add + danger);
 }
 
 /* ---------- render ---------- */
@@ -806,7 +813,7 @@ function render() {
   }
 
   const tabs = '<nav class="tabs">' +
-    '<button class="' + (state.tab === 'build' ? 'on' : '') + '" data-act="tab" data-val="build">Lagbygging</button>' +
+    '<button class="' + (state.tab === 'build' ? 'on' : '') + '" data-act="tab" data-val="build">Team building</button>' +
     '<button class="' + (state.tab === 'pug' ? 'on' : '') + '" data-act="tab" data-val="pug">Pugging</button>' +
     '<button class="' + (state.tab === 'meta' ? 'on' : '') + '" data-act="tab" data-val="meta">Comps</button>' +
     '<button class="' + (state.tab === 'roster' ? 'on' : '') + '" data-act="tab" data-val="roster">Roster</button></nav>';
@@ -826,14 +833,14 @@ function render() {
     view = rosterSection() + savedSection();
   }
 
-  const foot = '<footer>Alt lagres automatisk i denne nettleseren. Bruk «Eksporter / importer» under «Lagrede lag» for å dele lag med gutta eller flytte dem til en annen maskin.</footer>';
+  const foot = '<footer>Everything is saved automatically in this browser. Use «Export / import» under «Saved teams» to share teams with the crew or move them to another machine.</footer>';
   const toast = state.toast ? '<div class="toast">' + state.toast + '</div>' : '';
   document.getElementById('app').innerHTML = top + view + foot + savebarHtml() + toast;
 
   for (const id in keep) {
     const el = document.getElementById(id);
     if (!el) continue;
-    if (id === 'ioText' && !keep[id].focus) continue; // vis fersk eksport når feltet ikke er i bruk
+    if (id === 'ioText' && !keep[id].focus) continue; // show a fresh export when the field is not in use
     el.value = keep[id].v;
     if (keep[id].focus) el.focus();
   }
@@ -851,7 +858,7 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { state.toast = null; render(); }, 2600);
 }
 
-/* ---------- handlinger ---------- */
+/* ---------- actions ---------- */
 
 function applyTeam(team, size, fromSaved) {
   if (size) state.teamSize = size;
@@ -956,11 +963,11 @@ document.addEventListener('click', e => {
     if (!comp) return;
     const st = findStaffing(comp);
     if (!st) {
-      showToast('Ingen av gutta kan bemanne <b>' + esc(comp.name) + '</b> akkurat nå');
+      showToast('None of the crew can staff <b>' + esc(comp.name) + '</b> right now');
       render();
       return;
     }
-    // spec-rollene fra compen styrer healer/dps-valget på tavla
+    // the spec roles from the comp drive the healer/dps choice on the board
     const specQ = {};
     comp.classes.forEach((c, i) => { (specQ[c] = specQ[c] || []).push(comp.specs[i]); });
     for (const person of state.people) { person.sel = []; person.healerRole = null; }
@@ -975,20 +982,20 @@ document.addEventListener('click', e => {
     }
     state.randomCount = Math.min(st.randoms, state.teamSize);
     state.tab = 'build';
-    showToast('<b>' + esc(comp.name) + '</b> satt på tavla' +
-      (st.randoms ? ' – ' + st.randoms + ' plass' + (st.randoms > 1 ? 'er' : '') + ' som Random' : ''));
+    showToast('<b>' + esc(comp.name) + '</b> set on the board' +
+      (st.randoms ? ' – ' + st.randoms + ' slot' + (st.randoms > 1 ? 's' : '') + ' as Random' : ''));
     resetPage();
   } else if (act === 'savecomp') {
     const team = listCache[Number(t.dataset.ti)];
     if (!team) return;
-    const name = 'Lag ' + (state.saved.length + 1);
+    const name = 'Team ' + (state.saved.length + 1);
     state.saved.push({ name, size: state.teamSize, team: storedTeamFromRow(team) });
-    showToast('Lagret som <b>' + esc(name) + '</b> under «Lagrede lag»');
+    showToast('Saved as <b>' + esc(name) + '</b> under «Saved teams»');
   } else if (act === 'use') {
     const team = listCache[Number(t.dataset.ti)];
     if (!team) return;
     applyTeam(team, null, false);
-    showToast('Laget er satt på tavla');
+    showToast('The team is set on the board');
     resetPage();
   } else if (act === 'usesaved') {
     const s = state.saved[Number(t.dataset.si)];
@@ -996,12 +1003,12 @@ document.addEventListener('click', e => {
     const misses = applyTeam(s.team.filter(x => !x.random), s.size, true);
     state.tab = 'build';
     showToast(misses.length
-      ? 'Satt på tavla – fant ikke: ' + esc(misses.join(', '))
-      : '<b>' + esc(s.name) + '</b> er satt på tavla');
+      ? 'Set on the board – could not find: ' + esc(misses.join(', '))
+      : '<b>' + esc(s.name) + '</b> is set on the board');
     resetPage();
   } else if (act === 'delsaved') {
     const s = state.saved.splice(Number(t.dataset.si), 1)[0];
-    showToast('Slettet <b>' + esc(s.name) + '</b>');
+    showToast('Deleted <b>' + esc(s.name) + '</b>');
   } else if (act === 'toggleio') {
     state.showIO = !state.showIO;
     state.collapsed.saved = false;
@@ -1009,12 +1016,12 @@ document.addEventListener('click', e => {
     const msgEl = document.getElementById('iomsg');
     try {
       const clean = reviveSaved(JSON.parse(document.getElementById('ioText').value));
-      if (!clean) throw new Error('Forventet en liste');
+      if (!clean) throw new Error('Expected a list');
       state.saved = clean;
-      showToast('Importerte ' + clean.length + ' lag (erstattet lista)');
+      showToast('Imported ' + clean.length + ' teams (replaced the list)');
     } catch (err) {
-      if (msgEl) { msgEl.classList.add('err'); msgEl.textContent = 'Kunne ikke lese teksten som JSON: ' + err.message; }
-      return; // ikke re-render – behold teksten i feltet
+      if (msgEl) { msgEl.classList.add('err'); msgEl.textContent = 'Could not read the text as JSON: ' + err.message; }
+      return; // do not re-render – keep the text in the field
     }
   } else if (act === 'saveboard') {
     const info = boardInfo();
@@ -1026,10 +1033,10 @@ document.addEventListener('click', e => {
     });
     for (let i = 0; i < state.randomCount; i++) team.push({ random: true });
     const inp = document.getElementById('saveName');
-    const name = (inp && inp.value.trim()) || 'Lag ' + (state.saved.length + 1);
+    const name = (inp && inp.value.trim()) || 'Team ' + (state.saved.length + 1);
     state.saved.push({ name, size: state.teamSize, team });
     if (inp) inp.value = '';
-    showToast('Lagret som <b>' + esc(name) + '</b> under «Lagrede lag»');
+    showToast('Saved as <b>' + esc(name) + '</b> under «Saved teams»');
   } else if (act === 'setreg') {
     p.roles = p.roles || {};
     p.roles[t.dataset.cls] = t.dataset.val;
@@ -1052,20 +1059,20 @@ document.addEventListener('click', e => {
     resetPage();
   } else if (act === 'rmperson') {
     const removed = state.people.splice(pi, 1)[0];
-    showToast('Fjernet <b>' + esc(removed.name) + '</b> fra rosteren');
+    showToast('Removed <b>' + esc(removed.name) + '</b> from the roster');
     resetPage();
   } else if (act === 'addperson') {
     const inp = document.getElementById('newName');
     const name = inp ? inp.value.trim() : '';
     if (!name) return;
     if (state.people.some(x => x.name.toLowerCase() === name.toLowerCase())) {
-      showToast('<b>' + esc(name) + '</b> finnes allerede');
+      showToast('<b>' + esc(name) + '</b> already exists');
       render();
       return;
     }
     state.people.push({ name, classes: [], benched: false, sel: [], healerRole: null, not70: [], roles: {} });
     if (inp) inp.value = '';
-    showToast('La til <b>' + esc(name) + '</b> – velg classes på kortet');
+    showToast('Added <b>' + esc(name) + '</b> – pick classes on the card');
   } else if (act === 'resetroster') {
     state.people = freshRoster();
     state.mustHave = new Set();
@@ -1074,7 +1081,7 @@ document.addEventListener('click', e => {
     state.caps = { rogue: 1, sham: 1 };
     state.needDispel = true;
     state.randomCount = 0;
-    showToast('Rosteren er tilbakestilt');
+    showToast('The roster has been reset');
     resetPage();
   } else {
     return;
@@ -1092,7 +1099,7 @@ document.addEventListener('change', e => {
   render();
 });
 
-// tastatur på seksjons-headere (role=button)
+// keyboard on section headers (role=button)
 document.addEventListener('keydown', e => {
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[role="button"][data-act="collapse"]')) {
     e.preventDefault();
