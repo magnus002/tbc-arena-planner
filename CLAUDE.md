@@ -1,83 +1,86 @@
-# TBC Arena – Lagplanlegger
+# TBC Arena – Team Planner
 
-Verktøy for Magnus og gjengen (WoW TBC): brainstorme arena-lag (2v2/3v3/5v5) —
-hvem spiller hvilken class/rolle, med regler og lagrede teams. Norsk UI.
+Tool for Magnus and the crew (WoW TBC): brainstorm arena teams (2v2/3v3/5v5) —
+who plays which class/role, with rules and saved teams. English UI.
 
-## Arbeidsform
+## Workflow
 
-- Foreslå → Magnus vedtar → utfør. Still spørsmål ved tvil i stedet for å anta.
-- Kjør `npm test` (oracle) og `npm run smoke` (browser) FØR du sier deg ferdig.
-  Begge skal være grønne. Nye motor-regler skal ha nytt oracle-scenario.
+- Propose → Magnus decides → execute. Ask when in doubt instead of assuming.
+- Run `npm test` (oracle) and `npm run smoke` (browser) BEFORE declaring
+  yourself done. Both must be green. New engine rules need a new oracle scenario.
 
-## Arkitektur (bevisst enkel)
+## Architecture (deliberately simple)
 
-- **Ingen build-steg, ingen rammeverk.** Statisk side: `index.html` + `style.css`
-  + `engine.js` + `app.js`. Hostes på GitHub Pages fra `main`:
-  https://magnus002.github.io/tbc-arena-planner/ — merge til main = live.
-- **`engine.js` er delt sannhet**: domenedata (CLASSES, SPECS, META,
-  DEFAULT_ROSTER) og generatoren `findComps`. Lastes av nettleseren OG require-es av testene.
-  ALDRI kopier logikk fra engine inn i app eller tester.
-- `app.js`: UI-tilstand (`state`), rendering (innerHTML-re-render av alt per
-  interaksjon — bevisst enkelt; tekstfelt-verdier bevares i `render()`),
-  hendelses-delegering via `data-act`. Fire faner: Lagbygging (tavla, filtre/
-  regler, gyldige lag med sortering), Pugging (brainstorm: comp-stripe,
-  sjekkliste, tilgjengelig-oversikt, random-plasser), Comps (META-referansen:
-  tier-lister per bracket, føringer, dispel/MS, «Prøv med gutta» som bemanner
-  en comp fra rosteren via motoren — hull/Lock blir random-plasser) og
-  Roster — alle deler samme state. Seksjonene er kollapsbare, id `#sec-<navn>`.
-- `tests/verify.js`: uavhengig brute-force-oracle. Poenget er at oracle og
-  motor er to separate implementasjoner — en ny regel legges til BEGGE steder.
-- `tests/smoke.js`: playwright-klikktest av hovedflytene mot `file://`.
+- **No build step, no framework.** Static site: `index.html` + `style.css`
+  + `engine.js` + `app.js`. Hosted on GitHub Pages from `main`:
+  https://magnus002.github.io/tbc-arena-planner/ — merging to main = live.
+- **`engine.js` is the shared source of truth**: domain data (CLASSES, SPECS,
+  META, DEFAULT_ROSTER) and the `findComps` generator. Loaded by the browser
+  AND required by the tests. NEVER copy logic from the engine into the app or tests.
+- `app.js`: UI state (`state`), rendering (innerHTML re-render of everything
+  per interaction — deliberately simple; text field values are preserved in
+  `render()`), event delegation via `data-act`. Four tabs: Team building (the
+  board, filters/rules, valid teams with sorting), Pugging (brainstorm: comp
+  strip, checklist, availability overview, random slots), Comps (the META
+  reference: tier lists per bracket, guidelines, dispel/MS, «Try with the
+  crew» which staffs a comp from the roster via the engine — gaps/Lock become
+  random slots) and Roster — all sharing the same state. Sections are
+  collapsible, id `#sec-<name>`.
+- `tests/verify.js`: an independent brute-force oracle. The point is that the
+  oracle and the engine are two separate implementations — a new rule gets
+  added to BOTH.
+- `tests/smoke.js`: a playwright click-through test of the main flows against `file://`.
 
-## Domenemodell (dagens)
+## Domain model (current)
 
 - Person: `{ name, classes[], benched, sel[], healerRole, not70[], roles{} }`
-- `roles[cls]`: `'healer' | 'dps' | 'both'` for hybrid-classes (pala/priest/
-  sham/druid); andre er alltid dps. `'both'` er default. Visning: ✚ / ⚔ / ✚⚔.
-- `sel[]`: valgte classes på tavla. 1+ valgt = HARD føring: personen er
-  alltid med, på EN av de valgte (flervalg → generatoren prøver alle).
-  `healerRole` (true/false/null=åpen) er rollevalget på tavla for ✚⚔-chars;
-  det utelukker classes som ikke kan spille rollen (`selOptions` i engine —
-  brukes også av UI-et, aldri reimplementer den i app).
-- `not70[cls]`: chars som ikke er 70; filtreres bort når «Kun 70» er på.
-- Regler: `caps` (maks per class, manglende nøkkel = ∞; standard rogue×1,
-  sham×1), `needDispel` (minst 1 pala/priest), `mustHave`, `healerFilter`
-  (eksakt antall faktiske healers).
-- Random-plasser: `state.randomCount` ukjente spillere teller mot
-  lagstørrelsen (UI-konsept, ikke motor): generatoren kalles med
-  `teamSize − randomCount`; filtre/regler gjelder de kjente.
-- Gull-linja (`.lockline`) viser alt som snevrer inn forslagene;
-  comp-sjekklista (`#checklist`) viser sham/dispeller (ja/mulig/nei),
-  maks-brudd og healer-antall for tavla.
-- Lagrede lag: `{ name, size, team: [{name, cls, heal(true|false|null)}
-  | {random: true}] }` — heal null = åpen rolle. Eksport/import = JSON i
-  textarea; import godtar også gammelt format (uten random).
+- `roles[cls]`: `'healer' | 'dps' | 'both'` for hybrid classes (pala/priest/
+  sham/druid); others are always dps. `'both'` is the default. Display: ✚ / ⚔ / ✚⚔.
+- `sel[]`: selected classes on the board. 1+ selected = HARD constraint: the
+  person is always included, on ONE of the selected ones (multi-select → the
+  generator tries them all). `healerRole` (true/false/null=open) is the role
+  choice on the board for ✚⚔ characters; it excludes classes that cannot
+  play that role (`selOptions` in the engine — also used by the UI, never
+  reimplement it in the app).
+- `not70[cls]`: characters that are not 70; filtered out when «Level 70 only» is on.
+- Rules: `caps` (max per class, a missing key = ∞; default rogue×1,
+  sham×1), `needDispel` (at least 1 pala/priest), `mustHave`, `healerFilter`
+  (exact number of actual healers).
+- Random slots: `state.randomCount` unknown players count against the
+  team size (a UI concept, not the engine's): the generator is called with
+  `teamSize − randomCount`; filters/rules apply to the known ones.
+- The gold line (`.lockline`) shows everything narrowing down the
+  suggestions; the comp checklist (`#checklist`) shows sham/dispeller
+  (yes/maybe/no), cap violations and the healer count for the board.
+- Saved teams: `{ name, size, team: [{name, cls, heal(true|false|null)}
+  | {random: true}] }` — heal null = open role. Export/import = JSON in a
+  textarea; import also accepts the old format (without random).
 
-## Kjente fallgruver
+## Known pitfalls
 
-- Lagring: hele `state` persisteres til localStorage, versjonert — ved
-  formatendringer, bump `STORAGE_VERSION` og legg migrering i `loadStored()`.
-  `persist()`/`loadStored()` svelger feil med vilje: artifact-/sandbox-kopier
-  uten localStorage skal kjøre videre i minnet. Ikke fjern lagringen.
-- Rene ✚-registreringer betyr «teller alltid som healer når han er med» —
-  kombinert med eksakt-N-filteret blir resultatlista fort veldig smal. UX-en
-  bør forklare slike innsnevringer (se PLAN.md punkt 3).
-- `esc()` alle personnavn/lagnavn i innerHTML (XSS via import-JSON).
-- Ingen `alert/confirm/prompt`.
+- Storage: the whole `state` is persisted to localStorage, versioned — on
+  format changes, bump `STORAGE_VERSION` and add a migration in `loadStored()`.
+  `persist()`/`loadStored()` deliberately swallow errors: artifact/sandbox
+  copies without localStorage should keep running in memory. Do not remove the storage.
+- Pure ✚ registrations mean «always counts as healer when included» —
+  combined with the exact-N filter, the result list narrows fast. The UX
+  should explain such narrowing (see PLAN.md item 3).
+- `esc()` every person/team name in innerHTML (XSS via import JSON).
+- No `alert/confirm/prompt`.
 
-## Domenefakta (TBC)
+## Domain facts (TBC)
 
-- Heal-capable classes: pala, priest, sham, druid. Dispellere: pala, priest.
-- Spec-katalogen ligger klar i `engine.js` (`SPECS`, ennå ikke koblet på UI).
-- `META` i engine.js: research-basert referanse (comps/tier per bracket,
-  føringer, dispel-taksonomi, MS-effekt, kilder) — vises i Comps-fanen, men
-  er IKKE koblet til reglene/sjekklista ennå; det krever vedtak fra Magnus.
-  `tests/verify.js` har integritetssjekk av META mot SPECS. Warlock (`lock`)
-  finnes kun i META (`META.extraClasses`), ikke i CLASSES.
-- WoW-classfarger ligger i `CLASSES` — behold dem i redesign; de bærer mye
-  gjenkjennelse (sham-blå er justert lysere for mørk bakgrunn).
+- Heal-capable classes: pala, priest, sham, druid. Dispellers: pala, priest.
+- The spec catalog is ready in `engine.js` (`SPECS`, not yet wired into the UI).
+- `META` in engine.js: a research-based reference (comps/tier per bracket,
+  guidelines, dispel taxonomy, MS effect, sources) — shown in the Comps tab,
+  but NOT wired into the rules/checklist yet; that needs a decision from
+  Magnus. `tests/verify.js` has an integrity check of META against SPECS.
+  Warlock (`lock`) only exists in META (`META.extraClasses`), not in CLASSES.
+- WoW class colors live in `CLASSES` — keep them in any redesign; they carry
+  a lot of recognition (sham blue is adjusted lighter for the dark background).
 
 ## Roadmap
 
-Se PLAN.md — prioritert av Magnus. Punkt 1 (oversikt) og 3 (UI-remake) er de
-uttalte hovedønskene; punkt 2 (spec-modell) er vedtatt retning for datamodellen.
+See PLAN.md — prioritized by Magnus. Item 1 (overview) and 3 (UI remake) are
+the stated main wishes; item 2 (spec model) is the agreed direction for the data model.
